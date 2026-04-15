@@ -9,6 +9,25 @@ const state = {
   preferences: loadPreferences()
 };
 
+function normalizeReaderWidth(value) {
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue)) {
+    return 82;
+  }
+
+  // Migrate older pixel-based values into a percentage slider range.
+  if (numericValue > 100) {
+    const legacyMin = 760;
+    const legacyMax = 1800;
+    const clampedLegacy = Math.min(legacyMax, Math.max(legacyMin, numericValue));
+    const normalized = 55 + ((clampedLegacy - legacyMin) / (legacyMax - legacyMin)) * 45;
+    return Math.round(normalized);
+  }
+
+  return Math.min(100, Math.max(55, Math.round(numericValue)));
+}
+
 const elements = {
   openFileButton: document.querySelector("#openFileButton"),
   openFolderButton: document.querySelector("#openFolderButton"),
@@ -39,14 +58,14 @@ function loadPreferences() {
     return {
       theme: stored.theme ?? "paper",
       fontSize: Number(stored.fontSize ?? 18),
-      readerWidth: Number(stored.readerWidth ?? 1120),
+      readerWidth: normalizeReaderWidth(stored.readerWidth ?? 82),
       sidebarOpen: stored.sidebarOpen ?? true
     };
   } catch {
     return {
       theme: "paper",
       fontSize: 18,
-      readerWidth: 1120,
+      readerWidth: 82,
       sidebarOpen: true
     };
   }
@@ -60,7 +79,7 @@ function applyPreferences() {
   document.body.dataset.theme = state.preferences.theme;
   document.body.dataset.sidebar = state.preferences.sidebarOpen ? "open" : "closed";
   document.documentElement.style.setProperty("--reader-font-size", `${state.preferences.fontSize}px`);
-  document.documentElement.style.setProperty("--reader-width", `${state.preferences.readerWidth}px`);
+  document.documentElement.style.setProperty("--reader-width", `${state.preferences.readerWidth}%`);
 
   elements.themeSelect.value = state.preferences.theme;
   elements.fontSizeInput.value = String(state.preferences.fontSize);

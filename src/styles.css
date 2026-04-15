@@ -1,6 +1,6 @@
 :root {
   --reader-font-size: 18px;
-  --reader-width: 780px;
+  --reader-width: 82%;
   --ui-font: "Avenir Next", "Segoe UI", sans-serif;
   --serif-font: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --shadow-soft: 0 20px 60px rgba(21, 24, 29, 0.08);
