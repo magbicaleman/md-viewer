@@ -79,6 +79,10 @@ select {
   font: inherit;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
