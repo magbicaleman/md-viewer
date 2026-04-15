@@ -40,8 +40,6 @@ const elements = {
   fileCount: document.querySelector("#fileCount"),
   rootLabel: document.querySelector("#rootLabel"),
   titlebarDocumentName: document.querySelector("#titlebarDocumentName"),
-  documentTitle: document.querySelector("#documentTitle"),
-  documentPath: document.querySelector("#documentPath"),
   markdownContent: document.querySelector("#markdownContent"),
   emptyState: document.querySelector("#emptyState"),
   statusBanner: document.querySelector("#statusBanner"),
@@ -192,8 +190,6 @@ async function openMarkdownFile(filePath) {
 
     state.currentPath = file.absolutePath;
     elements.titlebarDocumentName.textContent = file.name;
-    elements.documentTitle.textContent = file.name;
-    elements.documentPath.textContent = file.absolutePath;
     elements.markdownContent.innerHTML = html;
     updateEmptyState();
     renderFileList();

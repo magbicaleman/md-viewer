@@ -41,13 +41,6 @@
       </header>
 
       <main class="reader-shell">
-        <header class="reader-header">
-          <div>
-            <h2 id="documentTitle" class="document-title">Open a Markdown file</h2>
-            <p id="documentPath" class="document-path">Choose a file or folder to start reading.</p>
-          </div>
-        </header>
-
         <section id="settingsPanel" class="settings-panel">
           <label class="control">
             <span>Theme</span>
@@ -71,16 +64,18 @@
 
         <div id="statusBanner" class="status-banner" hidden></div>
 
-        <section id="emptyState" class="empty-state">
-          <div class="empty-card">
-            <h3>Pick a file or choose a notes folder.</h3>
-            <p>
-              Folder mode indexes the tree for Markdown files and lets you move through them from the sidebar.
-            </p>
-          </div>
-        </section>
+        <div class="reader-content">
+          <section id="emptyState" class="empty-state">
+            <div class="empty-card">
+              <h3>Pick a file or choose a notes folder.</h3>
+              <p>
+                Folder mode indexes the tree for Markdown files and lets you move through them from the sidebar.
+              </p>
+            </div>
+          </section>
 
-        <article id="markdownContent" class="markdown-body" hidden></article>
+          <article id="markdownContent" class="markdown-body" hidden></article>
+        </div>
       </main>
 
       <aside class="sidebar">

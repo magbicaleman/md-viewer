@@ -61,10 +61,11 @@ body[data-theme="graphite"] {
 html,
 body {
   margin: 0;
-  min-height: 100%;
+  height: 100%;
 }
 
 body {
+  overflow: hidden;
   font-family: var(--ui-font);
   color: var(--text);
   background:
@@ -440,34 +441,13 @@ select {
 .reader-shell {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
   grid-column: 1;
   grid-row: 2;
+  min-height: 0;
   min-width: 0;
-  padding: 28px 36px 44px;
-}
-
-.reader-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
-}
-
-.reader-header > :first-child {
-  flex: 1;
-  min-width: 0;
-}
-
-.document-title {
-  font-size: clamp(2rem, 4vw, 3.2rem);
-  line-height: 0.98;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-
-.document-path {
-  margin-top: 10px;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  padding: 20px 36px 44px;
 }
 
 .root-label {
@@ -529,10 +509,20 @@ body[data-sidebar="closed"] .sidebar-inner {
   color: var(--status-error-text);
 }
 
+.reader-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 8px;
+}
+
 .empty-state {
   display: grid;
   place-items: center;
-  flex: 1;
+  flex: 0 0 auto;
 }
 
 .empty-card,
