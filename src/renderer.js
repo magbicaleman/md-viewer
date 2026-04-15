@@ -45,6 +45,8 @@ const elements = {
   statusBanner: document.querySelector("#statusBanner"),
   toggleSettingsButton: document.querySelector("#toggleSettingsButton"),
   settingsPanel: document.querySelector("#settingsPanel"),
+  readerShellBottom: document.querySelector(".reader-shell-bottom"),
+  readerContent: document.querySelector(".reader-content"),
   themeSelect: document.querySelector("#themeSelect"),
   fontSizeInput: document.querySelector("#fontSizeInput"),
   readerWidthInput: document.querySelector("#readerWidthInput")
@@ -146,6 +148,27 @@ function updateEmptyState() {
   elements.markdownContent.hidden = !hasDocument;
 }
 
+function updateReaderScrollState() {
+  const viewport = elements.readerContent;
+  const shellBottom = elements.readerShellBottom;
+
+  if (!viewport) {
+    return;
+  }
+
+  const canScroll = viewport.scrollHeight > viewport.clientHeight + 1;
+  const showTopShadow = canScroll && viewport.scrollTop > 1;
+  const showBottomShadow = canScroll && viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 1;
+
+  viewport.dataset.scrollTopShadow = String(showTopShadow);
+  viewport.dataset.scrollBottomShadow = String(showBottomShadow);
+
+  if (shellBottom) {
+    shellBottom.dataset.scrollTopShadow = String(showTopShadow);
+    shellBottom.dataset.scrollBottomShadow = String(showBottomShadow);
+  }
+}
+
 function getVisibleEntries() {
   const filterValue = state.filterText.trim().toLowerCase();
 
@@ -194,6 +217,7 @@ async function openMarkdownFile(filePath) {
     updateEmptyState();
     renderFileList();
     showStatus("");
+    requestAnimationFrame(updateReaderScrollState);
   } catch (error) {
     reportError(error, "Unable to open the selected Markdown file.");
   }
@@ -236,6 +260,7 @@ async function loadTarget(target) {
   setSourceInfo();
   updateEmptyState();
   renderFileList();
+  requestAnimationFrame(updateReaderScrollState);
 
   if (target.currentPath) {
     await openMarkdownFile(target.currentPath);
@@ -362,9 +387,14 @@ function bindEvents() {
     renderFileList();
   });
 
+  elements.readerContent.addEventListener("scroll", () => {
+    updateReaderScrollState();
+  });
+
   elements.toggleSettingsButton.addEventListener("click", () => {
     elements.settingsPanel.hidden = !elements.settingsPanel.hidden;
     syncSettingsButton();
+    requestAnimationFrame(updateReaderScrollState);
   });
 
   elements.themeSelect.addEventListener("change", (event) => {
@@ -397,6 +427,7 @@ async function initialize() {
     renderFileList();
     bindEvents();
     syncSettingsButton();
+    updateReaderScrollState();
 
     const bridge = getBridge();
     const launchTarget = await bridge.getLaunchTarget();
@@ -418,6 +449,10 @@ window.addEventListener("error", (event) => {
 
 window.addEventListener("unhandledrejection", (event) => {
   reportError(event.reason, "An unexpected async renderer error occurred.");
+});
+
+window.addEventListener("resize", () => {
+  updateReaderScrollState();
 });
 
 void initialize();
