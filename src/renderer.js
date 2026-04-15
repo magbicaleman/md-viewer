@@ -39,14 +39,14 @@ function loadPreferences() {
     return {
       theme: stored.theme ?? "paper",
       fontSize: Number(stored.fontSize ?? 18),
-      readerWidth: Number(stored.readerWidth ?? 780),
+      readerWidth: Number(stored.readerWidth ?? 1120),
       sidebarOpen: stored.sidebarOpen ?? true
     };
   } catch {
     return {
       theme: "paper",
       fontSize: 18,
-      readerWidth: 780,
+      readerWidth: 1120,
       sidebarOpen: true
     };
   }
@@ -123,6 +123,12 @@ function setSourceInfo() {
   }
 }
 
+function updateEmptyState() {
+  const hasDocument = Boolean(state.currentPath);
+  elements.emptyState.hidden = hasDocument;
+  elements.markdownContent.hidden = !hasDocument;
+}
+
 function getVisibleEntries() {
   const filterValue = state.filterText.trim().toLowerCase();
 
@@ -170,8 +176,7 @@ async function openMarkdownFile(filePath) {
     elements.documentTitle.textContent = file.name;
     elements.documentPath.textContent = file.absolutePath;
     elements.markdownContent.innerHTML = html;
-    elements.markdownContent.hidden = false;
-    elements.emptyState.hidden = true;
+    updateEmptyState();
     renderFileList();
     showStatus("");
   } catch (error) {
@@ -214,6 +219,7 @@ async function loadTarget(target) {
   state.entries = target.entries;
   state.currentPath = target.currentPath;
   setSourceInfo();
+  updateEmptyState();
   renderFileList();
 
   if (target.currentPath) {
@@ -364,6 +370,7 @@ async function initialize() {
     applyPreferences();
     toggleAdvancedPanel(false);
     setSourceInfo();
+    updateEmptyState();
     renderFileList();
     bindEvents();
 

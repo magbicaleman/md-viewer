@@ -171,16 +171,6 @@ select {
   max-width: 10ch;
 }
 
-.eyebrow,
-.section-label {
-  margin: 0 0 10px;
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
 .sidebar-copy,
 .root-label,
 .document-path,
@@ -271,6 +261,34 @@ select {
   line-height: 1;
 }
 
+.button-sliders-glyph {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.button-sliders-glyph span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.button-sliders-glyph span:nth-child(1) {
+  top: 1px;
+}
+
+.button-sliders-glyph span:nth-child(2) {
+  top: 6px;
+}
+
+.button-sliders-glyph span:nth-child(3) {
+  top: 11px;
+}
+
 .path-form,
 .advanced-panel,
 .library-panel {
@@ -332,6 +350,7 @@ select {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  padding-top: 4px;
 }
 
 .library-header > :first-child {
@@ -413,8 +432,7 @@ select {
 .reader-header {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
+  justify-content: flex-start;
 }
 
 .reader-header > :first-child {
@@ -430,7 +448,7 @@ select {
 }
 
 .document-path {
-  margin-top: 8px;
+  margin-top: 10px;
   overflow-wrap: anywhere;
 }
 
@@ -472,10 +490,8 @@ body[data-sidebar="closed"] .sidebar {
 }
 
 .control span {
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 0.9rem;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -499,7 +515,7 @@ body[data-sidebar="closed"] .sidebar {
 
 .empty-card,
 .markdown-body {
-  width: min(100%, calc(var(--reader-width) + 120px));
+  width: min(100%, var(--reader-width));
   max-width: 100%;
   padding: 34px 38px;
   border-radius: 32px;

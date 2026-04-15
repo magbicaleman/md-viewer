@@ -29,14 +29,20 @@
             </span>
             <span class="button-label">Library</span>
           </button>
-          <button id="toggleSettingsButton" class="button button-outline" type="button">View</button>
+          <button id="toggleSettingsButton" class="button button-outline button-with-icon" type="button">
+            <span class="button-sliders-glyph" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+            <span class="button-label">Display</span>
+          </button>
         </div>
       </header>
 
       <main class="reader-shell">
         <header class="reader-header">
           <div>
-            <p class="section-label">Now Reading</p>
             <h2 id="documentTitle" class="document-title">Open a Markdown file</h2>
             <p id="documentPath" class="document-path">Choose a file or folder to start reading.</p>
           </div>
@@ -59,7 +65,7 @@
 
           <label class="control">
             <span>Reading Width</span>
-            <input id="readerWidthInput" type="range" min="640" max="1040" step="20" />
+            <input id="readerWidthInput" type="range" min="760" max="1800" step="20" />
           </label>
         </section>
 
@@ -67,7 +73,6 @@
 
         <section id="emptyState" class="empty-state">
           <div class="empty-card">
-            <p class="eyebrow">Start Here</p>
             <h3>Pick a file or choose a notes folder.</h3>
             <p>
               Folder mode indexes the tree for Markdown files and lets you move through them from the sidebar.
@@ -80,7 +85,6 @@
 
       <aside class="sidebar">
         <div class="brand-block">
-          <p class="eyebrow">Library</p>
           <h1>File browser.</h1>
           <p class="sidebar-copy">
             Open one file, scan a folder, or keep a compact note index visible while you read.
@@ -121,7 +125,6 @@
         <div class="library-panel">
           <div class="library-header">
             <div>
-              <p class="section-label">Source</p>
               <p id="rootLabel" class="root-label">No source selected</p>
             </div>
             <p id="fileCount" class="file-count">0 files</p>
