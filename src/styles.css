@@ -234,29 +234,41 @@ select {
   border: 1px solid var(--panel-border);
 }
 
-.button-icon {
+.button-with-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  min-width: 46px;
-  padding: 0;
+  gap: 10px;
 }
 
-.button-icon-glyph {
+.button-panel-glyph {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
+  flex: 0 0 auto;
 }
 
-.button-icon-glyph span {
+.button-panel-glyph span {
   display: block;
-  width: 4px;
-  height: 16px;
   border-radius: 999px;
   background: currentColor;
   opacity: 0.95;
+}
+
+.button-panel-glyph span:first-child {
+  width: 4px;
+  height: 16px;
+}
+
+.button-panel-glyph span:last-child {
+  width: 11px;
+  height: 16px;
+  opacity: 0.6;
+}
+
+.button-label {
+  line-height: 1;
 }
 
 .path-form,

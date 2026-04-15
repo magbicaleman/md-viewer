@@ -68,11 +68,11 @@ function applyPreferences() {
   elements.toggleSidebarButton.setAttribute("aria-pressed", String(state.preferences.sidebarOpen));
   elements.toggleSidebarButton.setAttribute(
     "aria-label",
-    state.preferences.sidebarOpen ? "Hide sidebar" : "Show sidebar"
+    state.preferences.sidebarOpen ? "Hide library sidebar" : "Show library sidebar"
   );
   elements.toggleSidebarButton.setAttribute(
     "title",
-    state.preferences.sidebarOpen ? "Hide sidebar" : "Show sidebar"
+    state.preferences.sidebarOpen ? "Hide library sidebar" : "Show library sidebar"
   );
 }
 
