@@ -10,8 +10,8 @@
 body[data-theme="paper"] {
   --bg: #f7f4ee;
   --bg-rgb: 247, 244, 238;
-  --reader-shadow-rgb: 72, 58, 43;
-  --reader-shadow-strength: 0.16;
+  --reader-shadow-rgb: 44, 36, 28;
+  --reader-shadow-strength: 0.2;
   --bg-strong: rgba(255, 255, 255, 0.7);
   --panel: rgba(255, 252, 247, 0.88);
   --panel-border: rgba(102, 95, 82, 0.14);
@@ -491,8 +491,8 @@ select {
 .reader-shell-bottom::after {
   content: "";
   position: absolute;
-  left: var(--reader-gutter);
-  right: var(--reader-gutter);
+  left: 0;
+  right: 0;
   height: 30px;
   pointer-events: none;
   opacity: 0;
@@ -502,7 +502,6 @@ select {
 
 .reader-shell-bottom::before {
   top: 0;
-  border-radius: 0 0 22px 22px;
   background:
     linear-gradient(
       to bottom,
@@ -519,7 +518,6 @@ select {
 
 .reader-shell-bottom::after {
   bottom: 0;
-  border-radius: 22px 22px 0 0;
   background:
     linear-gradient(
       to top,
