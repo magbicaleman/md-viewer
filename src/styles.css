@@ -450,13 +450,33 @@ select {
 .reader-shell {
   display: flex;
   flex-direction: column;
-  gap: 14px;
   grid-column: 1;
   grid-row: 2;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  background: red;
+}
+
+.reader-shell-top {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 14px;
   padding: 20px 36px 0;
+}
+
+.reader-shell-top:not(:has(> :not([hidden]))) {
+  gap: 0;
+  padding: 0;
+}
+
+.reader-shell-bottom {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .root-label {
@@ -519,37 +539,14 @@ body[data-sidebar="closed"] .sidebar-inner {
 }
 
 .reader-content {
-  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 16px;
   min-height: 0;
   overflow: auto;
-  padding: 14px 8px 44px 0;
-}
-
-.reader-content::before,
-.reader-content::after {
-  content: "";
-  position: sticky;
-  left: 0;
-  right: 8px;
-  height: 22px;
-  z-index: 2;
-  pointer-events: none;
-}
-
-.reader-content::before {
-  top: 0;
-  margin-bottom: -22px;
-  background: linear-gradient(to bottom, rgba(var(--bg-rgb), 1) 0%, rgba(var(--bg-rgb), 0) 100%);
-}
-
-.reader-content::after {
-  bottom: 0;
-  margin-top: -22px;
-  background: linear-gradient(to top, rgba(var(--bg-rgb), 1) 0%, rgba(var(--bg-rgb), 0) 100%);
+  background: blue;
+  padding: 14px 36px 44px;
 }
 
 .empty-state {

@@ -41,40 +41,44 @@
       </header>
 
       <main class="reader-shell">
-        <section id="settingsPanel" class="settings-panel">
-          <label class="control">
-            <span>Theme</span>
-            <select id="themeSelect" class="select-input">
-              <option value="paper">Paper</option>
-              <option value="mist">Mist</option>
-              <option value="graphite">Graphite</option>
-            </select>
-          </label>
+        <div class="reader-shell-top">
+          <section id="settingsPanel" class="settings-panel">
+            <label class="control">
+              <span>Theme</span>
+              <select id="themeSelect" class="select-input">
+                <option value="paper">Paper</option>
+                <option value="mist">Mist</option>
+                <option value="graphite">Graphite</option>
+              </select>
+            </label>
 
-          <label class="control">
-            <span>Type Size</span>
-            <input id="fontSizeInput" type="range" min="15" max="22" step="1" />
-          </label>
+            <label class="control">
+              <span>Type Size</span>
+              <input id="fontSizeInput" type="range" min="15" max="22" step="1" />
+            </label>
 
-          <label class="control">
-            <span>Reading Width</span>
-            <input id="readerWidthInput" type="range" min="55" max="100" step="1" />
-          </label>
-        </section>
-
-        <div id="statusBanner" class="status-banner" hidden></div>
-
-        <div class="reader-content">
-          <section id="emptyState" class="empty-state">
-            <div class="empty-card">
-              <h3>Pick a file or choose a notes folder.</h3>
-              <p>
-                Folder mode indexes the tree for Markdown files and lets you move through them from the sidebar.
-              </p>
-            </div>
+            <label class="control">
+              <span>Reading Width</span>
+              <input id="readerWidthInput" type="range" min="55" max="100" step="1" />
+            </label>
           </section>
 
-          <article id="markdownContent" class="markdown-body" hidden></article>
+          <div id="statusBanner" class="status-banner" hidden></div>
+        </div>
+
+        <div class="reader-shell-bottom">
+          <div class="reader-content">
+            <section id="emptyState" class="empty-state">
+              <div class="empty-card">
+                <h3>Pick a file or choose a notes folder.</h3>
+                <p>
+                  Folder mode indexes the tree for Markdown files and lets you move through them from the sidebar.
+                </p>
+              </div>
+            </section>
+
+            <article id="markdownContent" class="markdown-body" hidden></article>
+          </div>
         </div>
       </main>
 
