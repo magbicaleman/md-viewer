@@ -84,7 +84,7 @@ select {
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   grid-template-rows: 52px minmax(0, 1fr);
   height: 100vh;
-  transition: grid-template-columns 180ms ease;
+  transition: grid-template-columns 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .window-titlebar {
@@ -142,19 +142,33 @@ select {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 20px;
   grid-column: 2;
   grid-row: 2;
   min-width: 0;
-  padding: 28px 22px;
+  padding: 0;
   background: var(--panel);
   border-left: 1px solid var(--panel-border);
   backdrop-filter: blur(14px);
   overflow: hidden;
+  transform-origin: right center;
   transition:
-    opacity 180ms ease,
-    padding 180ms ease,
-    border-color 180ms ease;
+    opacity 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sidebar-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 300px;
+  height: 100%;
+  padding: 28px 22px;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 220ms ease,
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .brand-block h1,
@@ -466,10 +480,14 @@ body[data-sidebar="closed"] .app-shell {
 
 body[data-sidebar="closed"] .sidebar {
   opacity: 0;
-  padding-left: 0;
-  padding-right: 0;
+  transform: translateX(18px) scaleX(0.97);
   border-left-color: transparent;
   pointer-events: none;
+}
+
+body[data-sidebar="closed"] .sidebar-inner {
+  opacity: 0;
+  transform: translateX(30px);
 }
 
 .settings-panel {
@@ -655,6 +673,7 @@ body[data-sidebar="closed"] .sidebar {
     grid-row: 3;
     border-left: 0;
     border-bottom: 1px solid var(--panel-border);
+    transform-origin: top center;
   }
 
   .reader-shell {
@@ -680,8 +699,7 @@ body[data-sidebar="closed"] .sidebar {
   }
 
   body[data-sidebar="closed"] .sidebar {
-    padding-top: 0;
-    padding-bottom: 0;
+    transform: translateY(-14px) scaleY(0.98);
     border-bottom-color: transparent;
   }
 }

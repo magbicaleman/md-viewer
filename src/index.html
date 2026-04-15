@@ -84,61 +84,63 @@
       </main>
 
       <aside class="sidebar">
-        <div class="brand-block">
-          <h1>File browser.</h1>
-          <p class="sidebar-copy">
-            Open one file, scan a folder, or keep a compact note index visible while you read.
-          </p>
-        </div>
-
-        <div class="actions">
-          <button id="openFileButton" class="button button-solid" type="button">Open File</button>
-          <button id="openFolderButton" class="button button-muted" type="button">Open Folder</button>
-        </div>
-
-        <div class="advanced-panel">
-          <button
-            id="toggleAdvancedButton"
-            class="text-button"
-            type="button"
-            aria-expanded="false"
-            aria-controls="advancedPathPanel"
-          >
-            Advanced
-          </button>
-
-          <form id="pathForm" class="path-form" hidden>
-            <label class="field-label" for="pathInput">Paste a Direct Path</label>
-            <div id="advancedPathPanel" class="path-input-row">
-              <input
-                id="pathInput"
-                class="text-input"
-                type="text"
-                placeholder="/Users/name/notes or /Users/name/notes/today.md"
-                autocomplete="off"
-              />
-              <button class="button button-outline" type="submit">Load</button>
-            </div>
-          </form>
-        </div>
-
-        <div class="library-panel">
-          <div class="library-header">
-            <div>
-              <p id="rootLabel" class="root-label">No source selected</p>
-            </div>
-            <p id="fileCount" class="file-count">0 files</p>
+        <div class="sidebar-inner">
+          <div class="brand-block">
+            <h1>File browser.</h1>
+            <p class="sidebar-copy">
+              Open one file, scan a folder, or keep a compact note index visible while you read.
+            </p>
           </div>
 
-          <input
-            id="filterInput"
-            class="text-input filter-input"
-            type="text"
-            placeholder="Filter indexed files"
-            autocomplete="off"
-          />
+          <div class="actions">
+            <button id="openFileButton" class="button button-solid" type="button">Open File</button>
+            <button id="openFolderButton" class="button button-muted" type="button">Open Folder</button>
+          </div>
 
-          <div id="fileList" class="file-list"></div>
+          <div class="advanced-panel">
+            <button
+              id="toggleAdvancedButton"
+              class="text-button"
+              type="button"
+              aria-expanded="false"
+              aria-controls="advancedPathPanel"
+            >
+              Advanced
+            </button>
+
+            <form id="pathForm" class="path-form" hidden>
+              <label class="field-label" for="pathInput">Paste a Direct Path</label>
+              <div id="advancedPathPanel" class="path-input-row">
+                <input
+                  id="pathInput"
+                  class="text-input"
+                  type="text"
+                  placeholder="/Users/name/notes or /Users/name/notes/today.md"
+                  autocomplete="off"
+                />
+                <button class="button button-outline" type="submit">Load</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="library-panel">
+            <div class="library-header">
+              <div>
+                <p id="rootLabel" class="root-label">No source selected</p>
+              </div>
+              <p id="fileCount" class="file-count">0 files</p>
+            </div>
+
+            <input
+              id="filterInput"
+              class="text-input filter-input"
+              type="text"
+              placeholder="Filter indexed files"
+              autocomplete="off"
+            />
+
+            <div id="fileList" class="file-list"></div>
+          </div>
         </div>
       </aside>
     </div>
