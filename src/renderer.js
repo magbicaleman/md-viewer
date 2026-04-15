@@ -1,4 +1,7 @@
 const STORAGE_KEY = "md-viewer-preferences";
+const DEFAULT_SIDEBAR_WIDTH = 336;
+const MIN_SIDEBAR_WIDTH = 300;
+const MAX_SIDEBAR_WIDTH = 560;
 
 const state = {
   sourceKind: null,
@@ -6,7 +9,8 @@ const state = {
   entries: [],
   currentPath: null,
   filterText: "",
-  preferences: loadPreferences()
+  preferences: loadPreferences(),
+  sidebarResizeSession: null
 };
 
 function normalizeReaderWidth(value) {
@@ -28,11 +32,22 @@ function normalizeReaderWidth(value) {
   return Math.min(100, Math.max(55, Math.round(numericValue)));
 }
 
+function normalizeSidebarWidth(value) {
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue)) {
+    return DEFAULT_SIDEBAR_WIDTH;
+  }
+
+  return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, Math.round(numericValue)));
+}
+
 const elements = {
   openFileButton: document.querySelector("#openFileButton"),
   openFolderButton: document.querySelector("#openFolderButton"),
   toggleSidebarButton: document.querySelector("#toggleSidebarButton"),
   toggleAdvancedButton: document.querySelector("#toggleAdvancedButton"),
+  sidebarResizeHandle: document.querySelector("#sidebarResizeHandle"),
   pathForm: document.querySelector("#pathForm"),
   pathInput: document.querySelector("#pathInput"),
   filterInput: document.querySelector("#filterInput"),
@@ -47,6 +62,7 @@ const elements = {
   settingsPanel: document.querySelector("#settingsPanel"),
   readerShellBottom: document.querySelector(".reader-shell-bottom"),
   readerContent: document.querySelector(".reader-content"),
+  sidebar: document.querySelector(".sidebar"),
   themeSelect: document.querySelector("#themeSelect"),
   fontSizeInput: document.querySelector("#fontSizeInput"),
   readerWidthInput: document.querySelector("#readerWidthInput")
@@ -59,6 +75,7 @@ function loadPreferences() {
       theme: stored.theme ?? "paper",
       fontSize: Number(stored.fontSize ?? 18),
       readerWidth: normalizeReaderWidth(stored.readerWidth ?? 82),
+      sidebarWidth: normalizeSidebarWidth(stored.sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH),
       sidebarOpen: stored.sidebarOpen ?? true
     };
   } catch {
@@ -66,6 +83,7 @@ function loadPreferences() {
       theme: "paper",
       fontSize: 18,
       readerWidth: 82,
+      sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       sidebarOpen: true
     };
   }
@@ -80,6 +98,7 @@ function applyPreferences() {
   document.body.dataset.sidebar = state.preferences.sidebarOpen ? "open" : "closed";
   document.documentElement.style.setProperty("--reader-font-size", `${state.preferences.fontSize}px`);
   document.documentElement.style.setProperty("--reader-width", `${state.preferences.readerWidth}%`);
+  document.documentElement.style.setProperty("--sidebar-width", `${getEffectiveSidebarWidth()}px`);
 
   elements.themeSelect.value = state.preferences.theme;
   elements.fontSizeInput.value = String(state.preferences.fontSize);
@@ -93,6 +112,31 @@ function applyPreferences() {
     "title",
     state.preferences.sidebarOpen ? "Hide library sidebar" : "Show library sidebar"
   );
+  elements.sidebarResizeHandle.setAttribute("aria-valuemin", String(MIN_SIDEBAR_WIDTH));
+  elements.sidebarResizeHandle.setAttribute("aria-valuemax", String(getSidebarWidthBounds().max));
+  elements.sidebarResizeHandle.setAttribute("aria-valuenow", String(getEffectiveSidebarWidth()));
+}
+
+function getSidebarWidthBounds() {
+  const viewportWidth = window.innerWidth;
+  const min = MIN_SIDEBAR_WIDTH;
+  const max = Math.max(min, Math.min(MAX_SIDEBAR_WIDTH, viewportWidth - 360));
+
+  return { min, max };
+}
+
+function getEffectiveSidebarWidth() {
+  const { min, max } = getSidebarWidthBounds();
+  return Math.min(max, Math.max(min, state.preferences.sidebarWidth));
+}
+
+function updateSidebarWidth(width, { persist = true } = {}) {
+  state.preferences.sidebarWidth = normalizeSidebarWidth(width);
+  applyPreferences();
+
+  if (persist) {
+    savePreferences();
+  }
 }
 
 function showStatus(message, kind = "info") {
@@ -303,6 +347,73 @@ function syncSettingsButton() {
   elements.toggleSettingsButton.setAttribute("title", isOpen ? "Hide display controls" : "Show display controls");
 }
 
+function startSidebarResize(pointerEvent) {
+  if (!state.preferences.sidebarOpen || window.innerWidth <= 980) {
+    return;
+  }
+
+  pointerEvent.preventDefault();
+
+  state.sidebarResizeSession = {
+    pointerId: pointerEvent.pointerId,
+    startX: pointerEvent.clientX,
+    startWidth: elements.sidebar.getBoundingClientRect().width
+  };
+
+  document.body.dataset.resizingSidebar = "true";
+  elements.sidebarResizeHandle.setPointerCapture(pointerEvent.pointerId);
+}
+
+function handleSidebarResize(pointerEvent) {
+  if (!state.sidebarResizeSession) {
+    return;
+  }
+
+  const delta = state.sidebarResizeSession.startX - pointerEvent.clientX;
+  updateSidebarWidth(state.sidebarResizeSession.startWidth + delta, { persist: false });
+}
+
+function stopSidebarResize(pointerEvent) {
+  if (!state.sidebarResizeSession) {
+    return;
+  }
+
+  const { pointerId } = state.sidebarResizeSession;
+
+  if (typeof pointerEvent?.clientX === "number") {
+    handleSidebarResize(pointerEvent);
+  }
+
+  state.sidebarResizeSession = null;
+  delete document.body.dataset.resizingSidebar;
+
+  if (elements.sidebarResizeHandle.hasPointerCapture(pointerId)) {
+    elements.sidebarResizeHandle.releasePointerCapture(pointerId);
+  }
+
+  savePreferences();
+}
+
+function handleSidebarResizeKeydown(event) {
+  if (!state.preferences.sidebarOpen || window.innerWidth <= 980) {
+    return;
+  }
+
+  const currentWidth = getEffectiveSidebarWidth();
+  const step = event.shiftKey ? 40 : 20;
+
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    updateSidebarWidth(currentWidth + step);
+    return;
+  }
+
+  if (event.key === "ArrowRight") {
+    event.preventDefault();
+    updateSidebarWidth(currentWidth - step);
+  }
+}
+
 function handleMarkdownClick(event) {
   const anchor = event.target.closest("a");
 
@@ -366,6 +477,12 @@ function bindEvents() {
   elements.toggleSidebarButton.addEventListener("click", () => {
     toggleSidebar();
   });
+
+  elements.sidebarResizeHandle.addEventListener("pointerdown", startSidebarResize);
+  elements.sidebarResizeHandle.addEventListener("pointermove", handleSidebarResize);
+  elements.sidebarResizeHandle.addEventListener("pointerup", stopSidebarResize);
+  elements.sidebarResizeHandle.addEventListener("pointercancel", stopSidebarResize);
+  elements.sidebarResizeHandle.addEventListener("keydown", handleSidebarResizeKeydown);
 
   elements.pathForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -452,6 +569,7 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 window.addEventListener("resize", () => {
+  applyPreferences();
   updateReaderScrollState();
 });
 
