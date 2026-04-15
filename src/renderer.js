@@ -275,6 +275,13 @@ function toggleSidebar(forceOpen) {
   savePreferences();
 }
 
+function syncSettingsButton() {
+  const isOpen = !elements.settingsPanel.hidden;
+  elements.toggleSettingsButton.setAttribute("aria-pressed", String(isOpen));
+  elements.toggleSettingsButton.setAttribute("aria-label", isOpen ? "Hide display controls" : "Show display controls");
+  elements.toggleSettingsButton.setAttribute("title", isOpen ? "Hide display controls" : "Show display controls");
+}
+
 function handleMarkdownClick(event) {
   const anchor = event.target.closest("a");
 
@@ -361,6 +368,7 @@ function bindEvents() {
 
   elements.toggleSettingsButton.addEventListener("click", () => {
     elements.settingsPanel.hidden = !elements.settingsPanel.hidden;
+    syncSettingsButton();
   });
 
   elements.themeSelect.addEventListener("change", (event) => {
@@ -392,6 +400,7 @@ async function initialize() {
     updateEmptyState();
     renderFileList();
     bindEvents();
+    syncSettingsButton();
 
     const bridge = getBridge();
     const launchTarget = await bridge.getLaunchTarget();
