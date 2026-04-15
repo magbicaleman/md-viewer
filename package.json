@@ -1,0 +1,23 @@
+{
+  "name": "md-viewer",
+  "version": "0.1.0",
+  "description": "A lightweight Electron markdown viewer for single files or indexed folders.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "keywords": [
+    "electron",
+    "markdown",
+    "viewer"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "marked": "^15.0.12"
+  },
+  "devDependencies": {
+    "electron": "^35.1.5"
+  }
+}

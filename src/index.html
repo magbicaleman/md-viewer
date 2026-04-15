@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MD Viewer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body data-theme="paper">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <p class="eyebrow">MD Viewer</p>
+          <h1>Quiet Markdown reading.</h1>
+          <p class="sidebar-copy">
+            Open one file, point at a folder, or paste a direct path. The app keeps the chrome minimal and the content central.
+          </p>
+        </div>
+
+        <div class="actions">
+          <button id="openFileButton" class="button button-solid" type="button">Open File</button>
+          <button id="openFolderButton" class="button button-muted" type="button">Open Folder</button>
+        </div>
+
+        <form id="pathForm" class="path-form">
+          <label class="field-label" for="pathInput">Direct Path</label>
+          <div class="path-input-row">
+            <input
+              id="pathInput"
+              class="text-input"
+              type="text"
+              placeholder="/Users/name/notes or /Users/name/notes/today.md"
+              autocomplete="off"
+            />
+            <button class="button button-outline" type="submit">Load</button>
+          </div>
+        </form>
+
+        <div class="library-panel">
+          <div class="library-header">
+            <div>
+              <p class="section-label">Library</p>
+              <p id="rootLabel" class="root-label">No source selected</p>
+            </div>
+            <p id="fileCount" class="file-count">0 files</p>
+          </div>
+
+          <input
+            id="filterInput"
+            class="text-input filter-input"
+            type="text"
+            placeholder="Filter indexed files"
+            autocomplete="off"
+          />
+
+          <div id="fileList" class="file-list"></div>
+        </div>
+      </aside>
+
+      <main class="reader-shell">
+        <header class="reader-header">
+          <div>
+            <p class="section-label">Now Reading</p>
+            <h2 id="documentTitle" class="document-title">Open a Markdown file</h2>
+            <p id="documentPath" class="document-path">The viewer supports a single file or a recursively scanned folder.</p>
+          </div>
+
+          <button id="toggleSettingsButton" class="button button-outline" type="button">View</button>
+        </header>
+
+        <section id="settingsPanel" class="settings-panel" hidden>
+          <label class="control">
+            <span>Theme</span>
+            <select id="themeSelect" class="select-input">
+              <option value="paper">Paper</option>
+              <option value="mist">Mist</option>
+              <option value="graphite">Graphite</option>
+            </select>
+          </label>
+
+          <label class="control">
+            <span>Type Size</span>
+            <input id="fontSizeInput" type="range" min="15" max="22" step="1" />
+          </label>
+
+          <label class="control">
+            <span>Reading Width</span>
+            <input id="readerWidthInput" type="range" min="640" max="1040" step="20" />
+          </label>
+        </section>
+
+        <div id="statusBanner" class="status-banner" hidden></div>
+
+        <section id="emptyState" class="empty-state">
+          <div class="empty-card">
+            <p class="eyebrow">Start Here</p>
+            <h3>Pick a file or point at a notes folder.</h3>
+            <p>
+              Folder mode indexes the tree for Markdown files and lets you move through them from the sidebar.
+            </p>
+          </div>
+        </section>
+
+        <article id="markdownContent" class="markdown-body" hidden></article>
+      </main>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
