@@ -8,6 +8,7 @@
 
 body[data-theme="paper"] {
   --bg: #f7f4ee;
+  --bg-rgb: 247, 244, 238;
   --bg-strong: rgba(255, 255, 255, 0.7);
   --panel: rgba(255, 252, 247, 0.88);
   --panel-border: rgba(102, 95, 82, 0.14);
@@ -24,6 +25,7 @@ body[data-theme="paper"] {
 
 body[data-theme="mist"] {
   --bg: #edf2f4;
+  --bg-rgb: 237, 242, 244;
   --bg-strong: rgba(255, 255, 255, 0.68);
   --panel: rgba(247, 251, 252, 0.9);
   --panel-border: rgba(70, 88, 96, 0.12);
@@ -40,6 +42,7 @@ body[data-theme="mist"] {
 
 body[data-theme="graphite"] {
   --bg: #171b20;
+  --bg-rgb: 23, 27, 32;
   --bg-strong: rgba(37, 43, 52, 0.76);
   --panel: rgba(25, 30, 37, 0.88);
   --panel-border: rgba(255, 255, 255, 0.08);
@@ -453,7 +456,7 @@ select {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-  padding: 20px 36px 44px;
+  padding: 20px 36px 0;
 }
 
 .root-label {
@@ -516,13 +519,37 @@ body[data-sidebar="closed"] .sidebar-inner {
 }
 
 .reader-content {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 16px;
   min-height: 0;
   overflow: auto;
-  padding-right: 8px;
+  padding: 14px 8px 44px 0;
+}
+
+.reader-content::before,
+.reader-content::after {
+  content: "";
+  position: sticky;
+  left: 0;
+  right: 8px;
+  height: 22px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.reader-content::before {
+  top: 0;
+  margin-bottom: -22px;
+  background: linear-gradient(to bottom, rgba(var(--bg-rgb), 1) 0%, rgba(var(--bg-rgb), 0) 100%);
+}
+
+.reader-content::after {
+  bottom: 0;
+  margin-top: -22px;
+  background: linear-gradient(to top, rgba(var(--bg-rgb), 1) 0%, rgba(var(--bg-rgb), 0) 100%);
 }
 
 .empty-state {
