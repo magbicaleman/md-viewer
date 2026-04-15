@@ -8,64 +8,38 @@
   </head>
   <body data-theme="paper">
     <div class="app-shell">
-      <aside class="sidebar">
-        <div class="brand-block">
-          <p class="eyebrow">MD Viewer</p>
-          <h1>Quiet Markdown reading.</h1>
-          <p class="sidebar-copy">
-            Open one file, point at a folder, or paste a direct path. The app keeps the chrome minimal and the content central.
-          </p>
+      <header class="window-titlebar">
+        <div class="titlebar-copy">
+          <p class="titlebar-app">MD Viewer</p>
+          <p id="titlebarDocumentName" class="titlebar-document">No document loaded</p>
         </div>
 
-        <div class="actions">
-          <button id="openFileButton" class="button button-solid" type="button">Open File</button>
-          <button id="openFolderButton" class="button button-muted" type="button">Open Folder</button>
+        <div class="titlebar-actions">
+          <button
+            id="toggleSidebarButton"
+            class="button button-icon button-outline"
+            type="button"
+            aria-pressed="true"
+            aria-label="Toggle sidebar"
+            title="Toggle sidebar"
+          >
+            <span class="button-icon-glyph" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+          </button>
+          <button id="toggleSettingsButton" class="button button-outline" type="button">View</button>
         </div>
-
-        <form id="pathForm" class="path-form">
-          <label class="field-label" for="pathInput">Direct Path</label>
-          <div class="path-input-row">
-            <input
-              id="pathInput"
-              class="text-input"
-              type="text"
-              placeholder="/Users/name/notes or /Users/name/notes/today.md"
-              autocomplete="off"
-            />
-            <button class="button button-outline" type="submit">Load</button>
-          </div>
-        </form>
-
-        <div class="library-panel">
-          <div class="library-header">
-            <div>
-              <p class="section-label">Library</p>
-              <p id="rootLabel" class="root-label">No source selected</p>
-            </div>
-            <p id="fileCount" class="file-count">0 files</p>
-          </div>
-
-          <input
-            id="filterInput"
-            class="text-input filter-input"
-            type="text"
-            placeholder="Filter indexed files"
-            autocomplete="off"
-          />
-
-          <div id="fileList" class="file-list"></div>
-        </div>
-      </aside>
+      </header>
 
       <main class="reader-shell">
         <header class="reader-header">
           <div>
             <p class="section-label">Now Reading</p>
             <h2 id="documentTitle" class="document-title">Open a Markdown file</h2>
-            <p id="documentPath" class="document-path">The viewer supports a single file or a recursively scanned folder.</p>
+            <p id="documentPath" class="document-path">Choose a file or folder to start reading.</p>
           </div>
-
-          <button id="toggleSettingsButton" class="button button-outline" type="button">View</button>
         </header>
 
         <section id="settingsPanel" class="settings-panel" hidden>
@@ -94,7 +68,7 @@
         <section id="emptyState" class="empty-state">
           <div class="empty-card">
             <p class="eyebrow">Start Here</p>
-            <h3>Pick a file or point at a notes folder.</h3>
+            <h3>Pick a file or choose a notes folder.</h3>
             <p>
               Folder mode indexes the tree for Markdown files and lets you move through them from the sidebar.
             </p>
@@ -103,6 +77,67 @@
 
         <article id="markdownContent" class="markdown-body" hidden></article>
       </main>
+
+      <aside class="sidebar">
+        <div class="brand-block">
+          <p class="eyebrow">Library</p>
+          <h1>File browser.</h1>
+          <p class="sidebar-copy">
+            Open one file, scan a folder, or keep a compact note index visible while you read.
+          </p>
+        </div>
+
+        <div class="actions">
+          <button id="openFileButton" class="button button-solid" type="button">Open File</button>
+          <button id="openFolderButton" class="button button-muted" type="button">Open Folder</button>
+        </div>
+
+        <div class="advanced-panel">
+          <button
+            id="toggleAdvancedButton"
+            class="text-button"
+            type="button"
+            aria-expanded="false"
+            aria-controls="advancedPathPanel"
+          >
+            Advanced
+          </button>
+
+          <form id="pathForm" class="path-form" hidden>
+            <label class="field-label" for="pathInput">Paste a Direct Path</label>
+            <div id="advancedPathPanel" class="path-input-row">
+              <input
+                id="pathInput"
+                class="text-input"
+                type="text"
+                placeholder="/Users/name/notes or /Users/name/notes/today.md"
+                autocomplete="off"
+              />
+              <button class="button button-outline" type="submit">Load</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="library-panel">
+          <div class="library-header">
+            <div>
+              <p class="section-label">Source</p>
+              <p id="rootLabel" class="root-label">No source selected</p>
+            </div>
+            <p id="fileCount" class="file-count">0 files</p>
+          </div>
+
+          <input
+            id="filterInput"
+            class="text-input filter-input"
+            type="text"
+            placeholder="Filter indexed files"
+            autocomplete="off"
+          />
+
+          <div id="fileList" class="file-list"></div>
+        </div>
+      </aside>
     </div>
 
     <script src="./renderer.js"></script>

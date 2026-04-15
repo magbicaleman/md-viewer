@@ -12,12 +12,15 @@ const state = {
 const elements = {
   openFileButton: document.querySelector("#openFileButton"),
   openFolderButton: document.querySelector("#openFolderButton"),
+  toggleSidebarButton: document.querySelector("#toggleSidebarButton"),
+  toggleAdvancedButton: document.querySelector("#toggleAdvancedButton"),
   pathForm: document.querySelector("#pathForm"),
   pathInput: document.querySelector("#pathInput"),
   filterInput: document.querySelector("#filterInput"),
   fileList: document.querySelector("#fileList"),
   fileCount: document.querySelector("#fileCount"),
   rootLabel: document.querySelector("#rootLabel"),
+  titlebarDocumentName: document.querySelector("#titlebarDocumentName"),
   documentTitle: document.querySelector("#documentTitle"),
   documentPath: document.querySelector("#documentPath"),
   markdownContent: document.querySelector("#markdownContent"),
@@ -36,13 +39,15 @@ function loadPreferences() {
     return {
       theme: stored.theme ?? "paper",
       fontSize: Number(stored.fontSize ?? 18),
-      readerWidth: Number(stored.readerWidth ?? 780)
+      readerWidth: Number(stored.readerWidth ?? 780),
+      sidebarOpen: stored.sidebarOpen ?? true
     };
   } catch {
     return {
       theme: "paper",
       fontSize: 18,
-      readerWidth: 780
+      readerWidth: 780,
+      sidebarOpen: true
     };
   }
 }
@@ -53,12 +58,22 @@ function savePreferences() {
 
 function applyPreferences() {
   document.body.dataset.theme = state.preferences.theme;
+  document.body.dataset.sidebar = state.preferences.sidebarOpen ? "open" : "closed";
   document.documentElement.style.setProperty("--reader-font-size", `${state.preferences.fontSize}px`);
   document.documentElement.style.setProperty("--reader-width", `${state.preferences.readerWidth}px`);
 
   elements.themeSelect.value = state.preferences.theme;
   elements.fontSizeInput.value = String(state.preferences.fontSize);
   elements.readerWidthInput.value = String(state.preferences.readerWidth);
+  elements.toggleSidebarButton.setAttribute("aria-pressed", String(state.preferences.sidebarOpen));
+  elements.toggleSidebarButton.setAttribute(
+    "aria-label",
+    state.preferences.sidebarOpen ? "Hide sidebar" : "Show sidebar"
+  );
+  elements.toggleSidebarButton.setAttribute(
+    "title",
+    state.preferences.sidebarOpen ? "Hide sidebar" : "Show sidebar"
+  );
 }
 
 function showStatus(message, kind = "info") {
@@ -74,9 +89,38 @@ function showStatus(message, kind = "info") {
   elements.statusBanner.dataset.kind = kind;
 }
 
+function formatError(error, fallbackMessage) {
+  if (error instanceof Error) {
+    return error.message || fallbackMessage;
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+
+  return fallbackMessage;
+}
+
+function reportError(error, fallbackMessage) {
+  const message = formatError(error, fallbackMessage);
+  console.error(fallbackMessage, error);
+  showStatus(message, "error");
+}
+
+function getBridge() {
+  if (!window.mdViewer) {
+    throw new Error("The Electron preload bridge did not load.");
+  }
+
+  return window.mdViewer;
+}
+
 function setSourceInfo() {
   elements.rootLabel.textContent = state.rootPath ?? "No source selected";
   elements.fileCount.textContent = `${state.entries.length} file${state.entries.length === 1 ? "" : "s"}`;
+  if (!state.currentPath) {
+    elements.titlebarDocumentName.textContent = "No document loaded";
+  }
 }
 
 function getVisibleEntries() {
@@ -117,10 +161,12 @@ function renderFileList() {
 
 async function openMarkdownFile(filePath) {
   try {
-    const file = await window.mdViewer.readMarkdownFile(filePath);
-    const html = window.mdViewer.renderMarkdown(file.content, file.absolutePath);
+    const bridge = getBridge();
+    const file = await bridge.readMarkdownFile(filePath);
+    const html = bridge.renderMarkdown(file.content, file.absolutePath);
 
     state.currentPath = file.absolutePath;
+    elements.titlebarDocumentName.textContent = file.name;
     elements.documentTitle.textContent = file.name;
     elements.documentPath.textContent = file.absolutePath;
     elements.markdownContent.innerHTML = html;
@@ -129,7 +175,7 @@ async function openMarkdownFile(filePath) {
     renderFileList();
     showStatus("");
   } catch (error) {
-    showStatus(error.message ?? "Unable to open the selected Markdown file.", "error");
+    reportError(error, "Unable to open the selected Markdown file.");
   }
 }
 
@@ -184,8 +230,24 @@ async function loadPathFromInput() {
   }
 
   showStatus("Resolving path…");
-  const target = await window.mdViewer.inspectPath(targetPath);
-  await loadTarget(target);
+  try {
+    const target = await getBridge().inspectPath(targetPath);
+    await loadTarget(target);
+  } catch (error) {
+    reportError(error, "Unable to resolve the provided path.");
+  }
+}
+
+function toggleAdvancedPanel(forceOpen) {
+  const isOpen = typeof forceOpen === "boolean" ? forceOpen : elements.pathForm.hidden;
+  elements.pathForm.hidden = !isOpen;
+  elements.toggleAdvancedButton.setAttribute("aria-expanded", String(isOpen));
+}
+
+function toggleSidebar(forceOpen) {
+  state.preferences.sidebarOpen = typeof forceOpen === "boolean" ? forceOpen : !state.preferences.sidebarOpen;
+  applyPreferences();
+  savePreferences();
 }
 
 function handleMarkdownClick(event) {
@@ -207,21 +269,49 @@ function handleMarkdownClick(event) {
 
   if (externalHref) {
     event.preventDefault();
-    void window.mdViewer.openExternal(externalHref);
+    try {
+      void getBridge().openExternal(externalHref);
+    } catch (error) {
+      reportError(error, "Unable to open the external link.");
+    }
   }
 }
 
 function bindEvents() {
   elements.openFileButton.addEventListener("click", async () => {
-    showStatus("Opening file chooser…");
-    const target = await window.mdViewer.chooseFile();
-    await loadTarget(target);
+    try {
+      const target = await getBridge().chooseFile();
+      if (!target) {
+        showStatus("");
+        return;
+      }
+
+      await loadTarget(target);
+    } catch (error) {
+      reportError(error, "Unable to open the file picker.");
+    }
   });
 
   elements.openFolderButton.addEventListener("click", async () => {
-    showStatus("Scanning folder…");
-    const target = await window.mdViewer.chooseFolder();
-    await loadTarget(target);
+    try {
+      const target = await getBridge().chooseFolder();
+      if (!target) {
+        showStatus("");
+        return;
+      }
+
+      await loadTarget(target);
+    } catch (error) {
+      reportError(error, "Unable to open the folder picker.");
+    }
+  });
+
+  elements.toggleAdvancedButton.addEventListener("click", () => {
+    toggleAdvancedPanel();
+  });
+
+  elements.toggleSidebarButton.addEventListener("click", () => {
+    toggleSidebar();
   });
 
   elements.pathForm.addEventListener("submit", (event) => {
@@ -270,19 +360,33 @@ function bindEvents() {
 }
 
 async function initialize() {
-  applyPreferences();
-  setSourceInfo();
-  renderFileList();
-  bindEvents();
+  try {
+    applyPreferences();
+    toggleAdvancedPanel(false);
+    setSourceInfo();
+    renderFileList();
+    bindEvents();
 
-  const launchTarget = await window.mdViewer.getLaunchTarget();
-  if (launchTarget) {
-    await loadTarget(launchTarget);
+    const bridge = getBridge();
+    const launchTarget = await bridge.getLaunchTarget();
+    if (launchTarget) {
+      await loadTarget(launchTarget);
+    }
+
+    bridge.onTargetOpened((target) => {
+      void loadTarget(target);
+    });
+  } catch (error) {
+    reportError(error, "Application initialization failed.");
   }
-
-  window.mdViewer.onTargetOpened((target) => {
-    void loadTarget(target);
-  });
 }
+
+window.addEventListener("error", (event) => {
+  reportError(event.error ?? event.message, "An unexpected renderer error occurred.");
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  reportError(event.reason, "An unexpected async renderer error occurred.");
+});
 
 void initialize();

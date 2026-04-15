@@ -16,6 +16,14 @@ const IGNORED_DIRECTORIES = new Set([
 let mainWindow = null;
 let pendingOpenPath = null;
 
+process.on("uncaughtException", (error) => {
+  console.error("[main] Uncaught exception:", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[main] Unhandled rejection:", reason);
+});
+
 function isMarkdownFile(filePath) {
   return MARKDOWN_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
@@ -147,6 +155,25 @@ async function sendOpenedTarget(targetPath) {
   mainWindow.webContents.send("target:opened", payload);
 }
 
+async function showOpenPicker(options, failureLabel) {
+  try {
+    const parentWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const result = parentWindow
+      ? await dialog.showOpenDialog(parentWindow, options)
+      : await dialog.showOpenDialog(options);
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return inspectTarget(result.filePaths[0]);
+  } catch (error) {
+    return {
+      error: `Unable to open the ${failureLabel} picker.${error?.message ? ` ${error.message}` : ""}`
+    };
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1380,
@@ -159,8 +186,21 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: false
     }
+  });
+
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error("[main] Renderer process exited:", details);
+  });
+
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    console.error("[main] Window failed to load:", {
+      errorCode,
+      errorDescription,
+      validatedURL
+    });
   });
 
   mainWindow.loadFile(path.join(__dirname, "index.html"));
@@ -192,8 +232,9 @@ app.on("open-file", (event, filePath) => {
   void sendOpenedTarget(filePath);
 });
 
-ipcMain.handle("dialog:open-file", async () => {
-  const result = await dialog.showOpenDialog({
+ipcMain.handle("dialog:open-file", async () =>
+  showOpenPicker(
+    {
     properties: ["openFile"],
     filters: [
       {
@@ -201,26 +242,19 @@ ipcMain.handle("dialog:open-file", async () => {
         extensions: [...MARKDOWN_EXTENSIONS].map((extension) => extension.slice(1))
       }
     ]
-  });
+    },
+    "file"
+  )
+);
 
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-
-  return inspectTarget(result.filePaths[0]);
-});
-
-ipcMain.handle("dialog:open-folder", async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ["openDirectory"]
-  });
-
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-
-  return inspectTarget(result.filePaths[0]);
-});
+ipcMain.handle("dialog:open-folder", async () =>
+  showOpenPicker(
+    {
+      properties: ["openDirectory"]
+    },
+    "folder"
+  )
+);
 
 ipcMain.handle("path:inspect", async (_event, targetPath) => inspectTarget(targetPath));
 ipcMain.handle("file:read-markdown", async (_event, filePath) => readMarkdownFile(filePath));
