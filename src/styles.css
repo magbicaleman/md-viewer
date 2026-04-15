@@ -243,6 +243,12 @@ select {
   border: 1px solid var(--panel-border);
 }
 
+.button-outline[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+}
+
 .button-with-icon {
   display: inline-flex;
   align-items: center;
