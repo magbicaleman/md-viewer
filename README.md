@@ -2,6 +2,8 @@
 
 A lightweight Electron app for reading Markdown files with a minimal interface.
 
+![MD Viewer app screenshot](./assets/screenshot-main-private.png)
+
 ## Features
 
 - Open a single Markdown file

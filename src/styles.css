@@ -688,7 +688,7 @@ body[data-resizing-sidebar="true"] .sidebar-inner {
 
 .settings-panel {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
   padding: 18px 22px;
   border: 1px solid var(--settings-panel-border);
@@ -722,6 +722,56 @@ body[data-resizing-sidebar="true"] .sidebar-inner {
 .control-range {
   gap: 12px;
   padding-left: 36px;
+}
+
+.control-toggle {
+  gap: 12px;
+  padding-left: 36px;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-height: 82px;
+  padding: 10px;
+  border: 1px solid var(--settings-panel-border);
+  border-radius: 28px;
+  background: var(--control-surface);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.45),
+    0 8px 20px rgba(var(--reader-shadow-rgb), 0.1);
+}
+
+.segmented-control-button {
+  border: 1px solid transparent;
+  border-radius: 20px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 600;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.segmented-control-button:hover {
+  color: var(--text);
+}
+
+.segmented-control-button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.segmented-control-button[data-selected="true"] {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--settings-panel-border));
+  background: var(--control-pill-active);
+  color: var(--text);
+  box-shadow: 0 8px 18px rgba(var(--reader-shadow-rgb), 0.12);
 }
 
 .select-shell {
@@ -1041,7 +1091,12 @@ body[data-resizing-sidebar="true"] .sidebar-inner {
     padding-left: 14px;
   }
 
-  .settings-panel .control:nth-child(3) {
+  .control-toggle {
+    padding-left: 14px;
+  }
+
+  .settings-panel .control:nth-child(3),
+  .settings-panel .control:nth-child(4) {
     border-left: 1px solid rgba(102, 95, 82, 0.12);
   }
 }
@@ -1069,6 +1124,10 @@ body[data-resizing-sidebar="true"] .sidebar-inner {
   }
 
   .control-range {
+    padding-left: 0;
+  }
+
+  .control-toggle {
     padding-left: 0;
   }
 }

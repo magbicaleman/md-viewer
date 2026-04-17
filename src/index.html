@@ -76,7 +76,7 @@
             <label class="control control-range">
               <span class="control-label">Type Size</span>
               <div class="range-shell">
-                <span id="fontSizeValue" class="range-value" aria-hidden="true">18</span>
+                <span id="fontSizeValue" class="range-value" aria-hidden="true">100%</span>
                 <div class="range-row">
                   <span class="range-edge range-edge-type range-edge-type-sm" aria-hidden="true">A</span>
                   <input id="fontSizeInput" class="range-input" type="range" min="15" max="22" step="1" />
@@ -106,6 +106,30 @@
                 </div>
               </div>
             </label>
+
+            <div class="control control-toggle">
+              <span class="control-label">Path Display</span>
+              <div id="pathDisplayControl" class="segmented-control" role="group" aria-label="Path display mode">
+                <button
+                  id="pathDisplayPrivateButton"
+                  class="segmented-control-button"
+                  type="button"
+                  data-value="private"
+                  aria-pressed="false"
+                >
+                  Private
+                </button>
+                <button
+                  id="pathDisplayFullButton"
+                  class="segmented-control-button"
+                  type="button"
+                  data-value="full"
+                  aria-pressed="true"
+                >
+                  Full
+                </button>
+              </div>
+            </div>
           </section>
 
           <div id="statusBanner" class="status-banner" hidden></div>

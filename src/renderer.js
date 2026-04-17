@@ -1,4 +1,5 @@
 const STORAGE_KEY = "md-viewer-preferences";
+const DEFAULT_FONT_SIZE = 18;
 const DEFAULT_SIDEBAR_WIDTH = 336;
 const MIN_SIDEBAR_WIDTH = 300;
 const MAX_SIDEBAR_WIDTH = 560;
@@ -76,6 +77,9 @@ const elements = {
   statusBanner: document.querySelector("#statusBanner"),
   toggleSettingsButton: document.querySelector("#toggleSettingsButton"),
   settingsPanel: document.querySelector("#settingsPanel"),
+  pathDisplayControl: document.querySelector("#pathDisplayControl"),
+  pathDisplayPrivateButton: document.querySelector("#pathDisplayPrivateButton"),
+  pathDisplayFullButton: document.querySelector("#pathDisplayFullButton"),
   readerShellBottom: document.querySelector(".reader-shell-bottom"),
   readerContent: document.querySelector(".reader-content"),
   sidebar: document.querySelector(".sidebar"),
@@ -91,16 +95,18 @@ function loadPreferences() {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
     return {
       theme: stored.theme ?? "paper",
-      fontSize: Number(stored.fontSize ?? 18),
+      fontSize: Number(stored.fontSize ?? DEFAULT_FONT_SIZE),
       readerWidth: normalizeReaderWidth(stored.readerWidth ?? 82),
+      pathDisplayMode: stored.pathDisplayMode === "private" ? "private" : "full",
       sidebarWidth: normalizeSidebarWidth(stored.sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH),
       sidebarOpen: stored.sidebarOpen ?? true
     };
   } catch {
     return {
       theme: "paper",
-      fontSize: 18,
+      fontSize: DEFAULT_FONT_SIZE,
       readerWidth: 82,
+      pathDisplayMode: "full",
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       sidebarOpen: true
     };
@@ -285,9 +291,12 @@ function syncRangeControl(input, valueOutput) {
   const value = Number(input.value ?? min);
   const ratio = max === min ? 0 : (value - min) / (max - min);
   const progress = `${Math.min(100, Math.max(0, ratio * 100))}%`;
-  const displayValue = Number.isInteger(value) ? String(value) : value.toFixed(0);
+  const isFontSizeControl = input.id === "fontSizeInput";
+  const displayValue = isFontSizeControl
+    ? String(Math.round((value / DEFAULT_FONT_SIZE) * 100))
+    : (Number.isInteger(value) ? String(value) : value.toFixed(0));
   const shell = valueOutput.closest(".range-shell");
-  const displaySuffix = input.id === "readerWidthInput" ? "%" : "";
+  const displaySuffix = isFontSizeControl || input.id === "readerWidthInput" ? "%" : "";
 
   valueOutput.textContent = `${displayValue}${displaySuffix}`;
 
@@ -327,8 +336,18 @@ function applyPreferences() {
   elements.themeSelect.value = state.preferences.theme;
   elements.fontSizeInput.value = String(state.preferences.fontSize);
   elements.readerWidthInput.value = String(state.preferences.readerWidth);
+  for (const button of [elements.pathDisplayPrivateButton, elements.pathDisplayFullButton]) {
+    if (!button) {
+      continue;
+    }
+
+    const isSelected = button.dataset.value === state.preferences.pathDisplayMode;
+    button.dataset.selected = String(isSelected);
+    button.setAttribute("aria-pressed", String(isSelected));
+  }
   syncThemeSelectShell();
   syncAllRangeControls();
+  setSourceInfo();
   elements.toggleSidebarButton.setAttribute("aria-pressed", String(state.preferences.sidebarOpen));
   elements.toggleSidebarButton.setAttribute(
     "aria-label",
@@ -400,6 +419,40 @@ function reportBackgroundError(error, fallbackMessage) {
   console.warn(fallbackMessage, error);
 }
 
+function normalizeUiPath(value = "") {
+  return value.replaceAll("\\", "/");
+}
+
+function formatRootPath(rootPath) {
+  if (!rootPath) {
+    return "No source selected";
+  }
+
+  if (state.preferences.pathDisplayMode !== "private") {
+    return rootPath;
+  }
+
+  const normalizedPath = normalizeUiPath(rootPath);
+  const windowsDriveMatch = normalizedPath.match(/^([A-Za-z]:)(\/.*)?$/);
+  const drivePrefix = windowsDriveMatch ? `${windowsDriveMatch[1]}/` : "";
+  const pathWithoutPrefix = windowsDriveMatch
+    ? (windowsDriveMatch[2] ?? "")
+    : (normalizedPath.startsWith("/") ? normalizedPath.slice(1) : normalizedPath);
+  const segments = pathWithoutPrefix.split("/").filter(Boolean);
+
+  if (segments.length <= 3) {
+    return normalizedPath;
+  }
+
+  const visibleSegments = segments.slice(-3).join("/");
+
+  if (drivePrefix) {
+    return `${drivePrefix}.../${visibleSegments}`;
+  }
+
+  return `.../${visibleSegments}`;
+}
+
 function getBridge() {
   if (!window.mdViewer) {
     throw new Error("The Electron preload bridge did not load.");
@@ -409,7 +462,7 @@ function getBridge() {
 }
 
 function setSourceInfo() {
-  elements.rootLabel.textContent = state.rootPath ?? "No source selected";
+  elements.rootLabel.textContent = formatRootPath(state.rootPath);
   elements.fileCount.textContent = `${state.entries.length} file${state.entries.length === 1 ? "" : "s"}`;
   if (!state.currentPath) {
     elements.titlebarDocumentName.textContent = "No document loaded";
@@ -1067,6 +1120,24 @@ function bindEvents() {
     applyPreferences();
     savePreferences();
     setRangeBubbleActive(elements.readerWidthInput, false, RANGE_BUBBLE_IDLE_DELAY_MS);
+  });
+
+  elements.pathDisplayControl.addEventListener("click", (event) => {
+    const button = event.target.closest(".segmented-control-button");
+
+    if (!button) {
+      return;
+    }
+
+    const nextValue = button.dataset.value === "private" ? "private" : "full";
+
+    if (state.preferences.pathDisplayMode === nextValue) {
+      return;
+    }
+
+    state.preferences.pathDisplayMode = nextValue;
+    applyPreferences();
+    savePreferences();
   });
 
   for (const input of [elements.fontSizeInput, elements.readerWidthInput]) {
