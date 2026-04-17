@@ -890,6 +890,8 @@ function handleMarkdownClick(event) {
     return;
   }
 
+  hideLinkPreview();
+
   const markdownPath = anchor.dataset.mdPath;
   const externalHref = anchor.dataset.external === "true" ? anchor.getAttribute("href") : null;
 
@@ -1090,6 +1092,15 @@ function bindEvents() {
   }
 
   elements.markdownContent.addEventListener("click", handleMarkdownClick);
+  elements.markdownContent.addEventListener("pointerdown", (event) => {
+    const anchor = event.target.closest("a");
+
+    if (!anchor || !elements.markdownContent.contains(anchor)) {
+      return;
+    }
+
+    hideLinkPreview();
+  });
   elements.markdownContent.addEventListener("pointerover", (event) => {
     const anchor = event.target.closest("a");
 
@@ -1128,6 +1139,10 @@ function bindEvents() {
     const anchor = event.target.closest("a");
 
     if (!anchor || !elements.markdownContent.contains(anchor)) {
+      return;
+    }
+
+    if (typeof anchor.matches === "function" && !anchor.matches(":focus-visible")) {
       return;
     }
 
@@ -1211,6 +1226,10 @@ window.addEventListener("blur", () => {
   if (state.sidebarResizeSession) {
     clearSidebarResizeSession();
   }
+});
+
+window.addEventListener("focus", () => {
+  hideLinkPreview();
 });
 
 document.addEventListener("visibilitychange", () => {
