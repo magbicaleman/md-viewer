@@ -15,6 +15,7 @@ const IGNORED_DIRECTORIES = new Set([
 
 let mainWindow = null;
 let pendingOpenPath = null;
+const appIconPath = path.join(__dirname, "..", "assets", "icon.png");
 
 process.on("uncaughtException", (error) => {
   console.error("[main] Uncaught exception:", error);
@@ -181,6 +182,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 720,
     backgroundColor: "#f7f4ee",
+    icon: appIconPath,
     autoHideMenuBar: true,
     titleBarStyle: "hiddenInset",
     webPreferences: {

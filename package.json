@@ -17,7 +17,9 @@
     "directories": {
       "output": "dist"
     },
+    "icon": "assets/icon.png",
     "files": [
+      "assets/**/*",
       "src/**/*",
       "package.json"
     ],
