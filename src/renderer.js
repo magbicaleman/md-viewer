@@ -3,6 +3,13 @@ const DEFAULT_SIDEBAR_WIDTH = 336;
 const MIN_SIDEBAR_WIDTH = 300;
 const MAX_SIDEBAR_WIDTH = 560;
 const RANGE_BUBBLE_IDLE_DELAY_MS = 1400;
+const LINK_PREVIEW_OFFSET_PX = 18;
+const SIDEBAR_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit"
+});
 
 const state = {
   sourceKind: null,
@@ -62,6 +69,9 @@ const elements = {
   rootLabel: document.querySelector("#rootLabel"),
   titlebarDocumentName: document.querySelector("#titlebarDocumentName"),
   markdownContent: document.querySelector("#markdownContent"),
+  linkPreview: document.querySelector("#linkPreview"),
+  linkPreviewKind: document.querySelector("#linkPreviewKind"),
+  linkPreviewValue: document.querySelector("#linkPreviewValue"),
   emptyState: document.querySelector("#emptyState"),
   statusBanner: document.querySelector("#statusBanner"),
   toggleSettingsButton: document.querySelector("#toggleSettingsButton"),
@@ -386,6 +396,10 @@ function reportError(error, fallbackMessage) {
   showStatus(message, "error");
 }
 
+function reportBackgroundError(error, fallbackMessage) {
+  console.warn(fallbackMessage, error);
+}
+
 function getBridge() {
   if (!window.mdViewer) {
     throw new Error("The Electron preload bridge did not load.");
@@ -408,6 +422,18 @@ function updateEmptyState() {
   elements.markdownContent.hidden = !hasDocument;
 }
 
+function resetDocumentState() {
+  hideLinkPreview();
+  state.currentPath = null;
+  elements.titlebarDocumentName.textContent = "No document loaded";
+  elements.markdownContent.innerHTML = "";
+  updateEmptyState();
+  renderFileList();
+  void getBridge().clearWatchContext().catch((error) => {
+    reportBackgroundError(error, "Unable to clear the auto-refresh watcher.");
+  });
+}
+
 function updateReaderScrollState() {
   const viewport = elements.readerContent;
   const shellBottom = elements.readerShellBottom;
@@ -427,6 +453,132 @@ function updateReaderScrollState() {
     shellBottom.dataset.scrollTopShadow = String(showTopShadow);
     shellBottom.dataset.scrollBottomShadow = String(showBottomShadow);
   }
+}
+
+function formatEntryModifiedAt(modifiedAt) {
+  if (!modifiedAt) {
+    return "";
+  }
+
+  const date = new Date(modifiedAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return `Edited ${SIDEBAR_DATE_FORMATTER.format(date)}`;
+}
+
+function normalizeEntryPath(value) {
+  return value.split(/[/\\]+/).join("/");
+}
+
+function getRelativeEntryPath(absolutePath) {
+  if (!absolutePath) {
+    return "";
+  }
+
+  if (state.sourceKind !== "folder" || !state.rootPath) {
+    return absolutePath.split(/[\\/]/).at(-1) ?? absolutePath;
+  }
+
+  const normalizedRootPath = normalizeEntryPath(state.rootPath).replace(/\/$/, "");
+  const normalizedAbsolutePath = normalizeEntryPath(absolutePath);
+
+  if (!normalizedAbsolutePath.startsWith(`${normalizedRootPath}/`)) {
+    return normalizedAbsolutePath.split("/").at(-1) ?? normalizedAbsolutePath;
+  }
+
+  return normalizedAbsolutePath.slice(normalizedRootPath.length + 1);
+}
+
+function upsertEntry(entryUpdate) {
+  const entryIndex = state.entries.findIndex((entry) => entry.absolutePath === entryUpdate.absolutePath);
+
+  if (entryIndex === -1) {
+    state.entries = [...state.entries, entryUpdate];
+    return;
+  }
+
+  state.entries = state.entries.map((entry, index) => (index === entryIndex ? { ...entry, ...entryUpdate } : entry));
+}
+
+function formatLinkPreviewKind(kind) {
+  switch (kind) {
+    case "website":
+      return "Website";
+    case "email":
+      return "Email";
+    case "location":
+    default:
+      return "Location";
+  }
+}
+
+function getLinkPreviewData(anchor) {
+  const destination = anchor?.dataset.linkDestination?.trim();
+
+  if (!destination) {
+    return null;
+  }
+
+  return {
+    kind: anchor.dataset.linkKind ?? "location",
+    destination
+  };
+}
+
+function positionLinkPreview(x, y) {
+  if (!elements.linkPreview || elements.linkPreview.hidden) {
+    return;
+  }
+
+  const margin = 16;
+  const previewRect = elements.linkPreview.getBoundingClientRect();
+  let left = x + LINK_PREVIEW_OFFSET_PX;
+  let top = y + LINK_PREVIEW_OFFSET_PX;
+
+  if (left + previewRect.width > window.innerWidth - margin) {
+    left = Math.max(margin, x - previewRect.width - LINK_PREVIEW_OFFSET_PX);
+  }
+
+  if (top + previewRect.height > window.innerHeight - margin) {
+    top = Math.max(margin, y - previewRect.height - LINK_PREVIEW_OFFSET_PX);
+  }
+
+  elements.linkPreview.style.left = `${left}px`;
+  elements.linkPreview.style.top = `${top}px`;
+}
+
+function hideLinkPreview() {
+  if (!elements.linkPreview) {
+    return;
+  }
+
+  elements.linkPreview.hidden = true;
+}
+
+function showLinkPreview(anchor, position) {
+  const previewData = getLinkPreviewData(anchor);
+
+  if (!previewData || !elements.linkPreview || !elements.linkPreviewKind || !elements.linkPreviewValue) {
+    hideLinkPreview();
+    return;
+  }
+
+  elements.linkPreview.dataset.kind = previewData.kind;
+  elements.linkPreviewKind.textContent = formatLinkPreviewKind(previewData.kind);
+  elements.linkPreviewValue.textContent = previewData.destination;
+  elements.linkPreview.hidden = false;
+  positionLinkPreview(position.x, position.y);
+}
+
+function showLinkPreviewForAnchor(anchor) {
+  const rect = anchor.getBoundingClientRect();
+  showLinkPreview(anchor, {
+    x: rect.left + rect.width / 2,
+    y: rect.bottom
+  });
 }
 
 function getVisibleEntries() {
@@ -457,9 +609,11 @@ function renderFileList() {
     button.className = "file-row";
     button.dataset.path = entry.absolutePath;
     button.dataset.active = String(entry.absolutePath === state.currentPath);
+    const modifiedLabel = formatEntryModifiedAt(entry.modifiedAt);
     button.innerHTML = `
       <span class="file-row-name">${entry.name}</span>
       <span class="file-row-path">${entry.relativePath}</span>
+      ${modifiedLabel ? `<span class="file-row-meta">${modifiedLabel}</span>` : ""}
     `;
     elements.fileList.append(button);
   }
@@ -471,12 +625,24 @@ async function openMarkdownFile(filePath) {
     const file = await bridge.readMarkdownFile(filePath);
     const html = bridge.renderMarkdown(file.content, file.absolutePath);
 
+    hideLinkPreview();
     state.currentPath = file.absolutePath;
+    upsertEntry({
+      absolutePath: file.absolutePath,
+      name: file.name,
+      relativePath: getRelativeEntryPath(file.absolutePath),
+      modifiedAt: file.modifiedAt ?? null
+    });
     elements.titlebarDocumentName.textContent = file.name;
     elements.markdownContent.innerHTML = html;
     updateEmptyState();
     renderFileList();
     showStatus("");
+    await bridge.setWatchContext({
+      currentPath: state.currentPath,
+      rootPath: state.rootPath,
+      sourceKind: state.sourceKind
+    });
     requestAnimationFrame(updateReaderScrollState);
   } catch (error) {
     reportError(error, "Unable to open the selected Markdown file.");
@@ -495,7 +661,8 @@ function mergeEntryIfMissing(filePath) {
     {
       name: filePath.split(/[\\/]/).at(-1) ?? filePath,
       absolutePath: filePath,
-      relativePath: filePath
+      relativePath: filePath,
+      modifiedAt: null
     }
   ];
 
@@ -524,6 +691,65 @@ async function loadTarget(target) {
 
   if (target.currentPath) {
     await openMarkdownFile(target.currentPath);
+  }
+}
+
+async function refreshEntriesFromDisk() {
+  if (!state.rootPath || state.sourceKind !== "folder") {
+    return;
+  }
+
+  const refreshedTarget = await getBridge().inspectPath(state.rootPath);
+
+  if (refreshedTarget?.error) {
+    state.entries = [];
+    setSourceInfo();
+    resetDocumentState();
+    showStatus(refreshedTarget.error, "error");
+    return;
+  }
+
+  state.entries = refreshedTarget.entries;
+  setSourceInfo();
+  renderFileList();
+
+  if (state.currentPath && state.entries.some((entry) => entry.absolutePath === state.currentPath)) {
+    return;
+  }
+
+  if (refreshedTarget.currentPath) {
+    await openMarkdownFile(refreshedTarget.currentPath);
+    return;
+  }
+
+  resetDocumentState();
+}
+
+async function handleWatchedTargetChanged(payload) {
+  if (!payload || !state.currentPath || payload.currentPath !== state.currentPath) {
+    if (payload?.refreshEntries && payload?.rootPath === state.rootPath && state.sourceKind === "folder") {
+      try {
+        await refreshEntriesFromDisk();
+      } catch (error) {
+        reportBackgroundError(error, "Unable to refresh the Markdown index after a filesystem change.");
+      }
+    }
+
+    return;
+  }
+
+  try {
+    if (payload.refreshEntries && payload.rootPath === state.rootPath && state.sourceKind === "folder") {
+      await refreshEntriesFromDisk();
+
+      if (!state.currentPath || payload.currentPath !== state.currentPath) {
+        return;
+      }
+    }
+
+    await openMarkdownFile(state.currentPath);
+  } catch (error) {
+    reportBackgroundError(error, "Unable to refresh the current Markdown document after a filesystem change.");
   }
 }
 
@@ -752,6 +978,7 @@ function bindEvents() {
   });
 
   elements.readerContent.addEventListener("scroll", () => {
+    hideLinkPreview();
     updateReaderScrollState();
   });
 
@@ -863,6 +1090,59 @@ function bindEvents() {
   }
 
   elements.markdownContent.addEventListener("click", handleMarkdownClick);
+  elements.markdownContent.addEventListener("pointerover", (event) => {
+    const anchor = event.target.closest("a");
+
+    if (!anchor || !elements.markdownContent.contains(anchor)) {
+      return;
+    }
+
+    showLinkPreview(anchor, {
+      x: event.clientX,
+      y: event.clientY
+    });
+  });
+  elements.markdownContent.addEventListener("pointermove", (event) => {
+    const anchor = event.target.closest("a");
+
+    if (!anchor || !elements.markdownContent.contains(anchor)) {
+      return;
+    }
+
+    showLinkPreview(anchor, {
+      x: event.clientX,
+      y: event.clientY
+    });
+  });
+  elements.markdownContent.addEventListener("pointerout", (event) => {
+    const anchor = event.target.closest("a");
+    const relatedAnchor = event.relatedTarget instanceof Element ? event.relatedTarget.closest("a") : null;
+
+    if (!anchor || relatedAnchor === anchor) {
+      return;
+    }
+
+    hideLinkPreview();
+  });
+  elements.markdownContent.addEventListener("focusin", (event) => {
+    const anchor = event.target.closest("a");
+
+    if (!anchor || !elements.markdownContent.contains(anchor)) {
+      return;
+    }
+
+    showLinkPreviewForAnchor(anchor);
+  });
+  elements.markdownContent.addEventListener("focusout", (event) => {
+    const anchor = event.target.closest("a");
+    const relatedAnchor = event.relatedTarget instanceof Element ? event.relatedTarget.closest("a") : null;
+
+    if (!anchor || relatedAnchor === anchor) {
+      return;
+    }
+
+    hideLinkPreview();
+  });
 
   if (typeof ResizeObserver !== "undefined") {
     const rangeLayoutObserver = new ResizeObserver(() => {
@@ -895,6 +1175,9 @@ async function initialize() {
       await loadTarget(launchTarget);
     }
 
+    bridge.onWatchedTargetChanged((payload) => {
+      void handleWatchedTargetChanged(payload);
+    });
     bridge.onTargetOpened((target) => {
       void loadTarget(target);
     });
@@ -912,6 +1195,8 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 window.addEventListener("resize", () => {
+  hideLinkPreview();
+
   if (state.sidebarResizeSession) {
     clearSidebarResizeSession();
   }
@@ -921,12 +1206,18 @@ window.addEventListener("resize", () => {
 });
 
 window.addEventListener("blur", () => {
+  hideLinkPreview();
+
   if (state.sidebarResizeSession) {
     clearSidebarResizeSession();
   }
 });
 
 document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    hideLinkPreview();
+  }
+
   if (document.hidden && state.sidebarResizeSession) {
     clearSidebarResizeSession();
   }
