@@ -4,6 +4,7 @@ const fsp = require("node:fs/promises");
 const path = require("node:path");
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdown", ".mkd"]);
+const SAFE_EXTERNAL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const IGNORED_DIRECTORIES = new Set([
   ".git",
   "node_modules",
@@ -334,6 +335,25 @@ function getLaunchPath(argv = process.argv) {
   return args.find((value) => value && !value.startsWith("-")) ?? null;
 }
 
+function validateExternalTarget(target) {
+  if (typeof target !== "string" || !target.trim()) {
+    throw new Error("A URL is required.");
+  }
+
+  let parsedTarget;
+  try {
+    parsedTarget = new URL(target.trim());
+  } catch {
+    throw new Error("Invalid external URL.");
+  }
+
+  if (!SAFE_EXTERNAL_PROTOCOLS.has(parsedTarget.protocol)) {
+    throw new Error(`Unsupported external URL protocol: ${parsedTarget.protocol}`);
+  }
+
+  return parsedTarget.toString();
+}
+
 async function sendOpenedTarget(targetPath) {
   if (!mainWindow || mainWindow.isDestroyed()) {
     pendingOpenPath = targetPath;
@@ -479,9 +499,5 @@ ipcMain.handle("app:get-launch-target", async () => {
   return inspectTarget(launchPath);
 });
 ipcMain.handle("shell:open-external", async (_event, target) => {
-  if (!target) {
-    return;
-  }
-
-  await shell.openExternal(target);
+  await shell.openExternal(validateExternalTarget(target));
 });
