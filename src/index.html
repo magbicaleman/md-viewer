@@ -151,8 +151,17 @@
         </div>
 
         <div id="linkPreview" class="link-preview" hidden>
-          <span id="linkPreviewKind" class="link-preview-kind">Location</span>
+          <div class="link-preview-header">
+            <svg id="linkPreviewIcon" class="link-preview-header-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path id="linkPreviewIconPath"></path>
+            </svg>
+            <span id="linkPreviewKind" class="link-preview-kind">Location</span>
+            <span id="linkPreviewSize" class="link-preview-size" hidden></span>
+          </div>
           <div id="linkPreviewValue" class="link-preview-value"></div>
+          <div id="linkPreviewFooter" class="link-preview-footer" hidden>
+            <div id="linkPreviewHint" class="link-preview-hint" hidden></div>
+          </div>
         </div>
       </main>
 

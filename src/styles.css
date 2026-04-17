@@ -1311,14 +1311,43 @@ body[data-resizing-sidebar="true"] .sidebar-inner {
   pointer-events: none;
 }
 
-.link-preview-kind {
-  display: block;
+.link-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 8px;
+}
+
+.link-preview-header-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--muted);
+  opacity: 0.92;
+}
+
+.link-preview-header-icon path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.85;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.link-preview-kind {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.link-preview-size {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .link-preview-value {
@@ -1327,6 +1356,18 @@ body[data-resizing-sidebar="true"] .sidebar-inner {
   font-size: 0.95rem;
   line-height: 1.45;
   word-break: break-word;
+}
+
+.link-preview-footer {
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.link-preview-hint {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .markdown-body blockquote {

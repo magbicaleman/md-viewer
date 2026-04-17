@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require("electron");
+const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
 const { marked } = require("marked");
@@ -52,6 +53,15 @@ function formatLocalDestination(absolutePath, currentFilePath, suffix = "") {
   return `${displayPath}${suffix}`;
 }
 
+function getLocalFileSize(absolutePath) {
+  try {
+    const stats = fs.statSync(absolutePath, { throwIfNoEntry: false });
+    return stats?.isFile() ? stats.size : null;
+  } catch {
+    return null;
+  }
+}
+
 function buildLocalResource(absolutePath, currentFilePath, suffix = "") {
   const fileHref = pathToFileURL(absolutePath).toString();
 
@@ -60,7 +70,8 @@ function buildLocalResource(absolutePath, currentFilePath, suffix = "") {
     href: `${fileHref}${suffix}`,
     path: absolutePath,
     previewKind: "location",
-    previewTarget: formatLocalDestination(absolutePath, currentFilePath, suffix)
+    previewTarget: formatLocalDestination(absolutePath, currentFilePath, suffix),
+    sizeBytes: getLocalFileSize(absolutePath)
   };
 }
 
@@ -121,11 +132,19 @@ function buildMarkdownRenderer(currentFilePath) {
     }
 
     const titleAttribute = title ? ` title="${escapeAttribute(title)}"` : "";
-    const previewAttributes = ` data-link-kind="${escapeAttribute(resolved.previewKind)}" data-link-destination="${escapeAttribute(resolved.previewTarget)}"`;
+    const sizeAttribute = Number.isFinite(resolved.sizeBytes)
+      ? ` data-link-size-bytes="${escapeAttribute(String(resolved.sizeBytes))}"`
+      : "";
+    const previewAttributes = ` data-link-kind="${escapeAttribute(resolved.previewKind)}" data-link-destination="${escapeAttribute(resolved.previewTarget)}"${sizeAttribute}`;
 
     if (resolved.kind === "markdown") {
       const targetPath = resolved.path ?? href;
       return `<a href="#" data-md-path="${escapeAttribute(targetPath)}"${previewAttributes}${titleAttribute}>${text}</a>`;
+    }
+
+    if (resolved.kind === "file") {
+      const targetPath = resolved.path ?? href;
+      return `<a href="#" data-reveal-path="${escapeAttribute(targetPath)}"${previewAttributes}${titleAttribute}>${text}</a>`;
     }
 
     if (resolved.kind === "location") {
@@ -171,6 +190,7 @@ contextBridge.exposeInMainWorld("mdViewer", {
   renderMarkdown,
   getLaunchTarget: () => ipcRenderer.invoke("app:get-launch-target"),
   openExternal: (target) => ipcRenderer.invoke("shell:open-external", target),
+  showItemInFolder: (target) => ipcRenderer.invoke("shell:show-item-in-folder", target),
   setWindowTheme: (theme) => ipcRenderer.send("window:set-theme", theme),
   onWatchedTargetChanged: (handler) => {
     const listener = (_event, payload) => handler(payload);

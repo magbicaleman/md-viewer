@@ -54,6 +54,37 @@ function getModifiedAt(stats) {
   return Number.isFinite(stats?.mtimeMs) ? new Date(stats.mtimeMs).toISOString() : null;
 }
 
+function getFileSize(stats) {
+  return Number.isFinite(stats?.size) ? stats.size : null;
+}
+
+function isLikelyBinaryBuffer(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    return false;
+  }
+
+  const sampleSize = Math.min(buffer.length, 4096);
+  let suspiciousByteCount = 0;
+
+  for (let index = 0; index < sampleSize; index += 1) {
+    const byte = buffer[index];
+
+    if (byte === 0) {
+      return true;
+    }
+
+    const isAllowedControl = byte === 9 || byte === 10 || byte === 12 || byte === 13;
+    const isAsciiText = byte >= 32 && byte <= 126;
+    const isUtf8OrExtended = byte >= 128;
+
+    if (!isAllowedControl && !isAsciiText && !isUtf8OrExtended) {
+      suspiciousByteCount += 1;
+    }
+  }
+
+  return suspiciousByteCount / sampleSize > 0.1;
+}
+
 async function createMarkdownEntry(absolutePath, basePath, stats) {
   const fileStats = stats ?? await fsp.stat(absolutePath);
 
@@ -61,7 +92,8 @@ async function createMarkdownEntry(absolutePath, basePath, stats) {
     name: path.basename(absolutePath),
     absolutePath,
     relativePath: normalizeSlashes(path.relative(basePath, absolutePath)),
-    modifiedAt: getModifiedAt(fileStats)
+    modifiedAt: getModifiedAt(fileStats),
+    sizeBytes: getFileSize(fileStats)
   };
 }
 
@@ -156,13 +188,19 @@ async function readMarkdownFile(filePath) {
     throw new Error("Only Markdown files can be opened.");
   }
 
-  const content = await fsp.readFile(absolutePath, "utf8");
+  const stats = await fsp.stat(absolutePath);
+  const contentBuffer = await fsp.readFile(absolutePath);
+
+  if (isLikelyBinaryBuffer(contentBuffer)) {
+    throw new Error("This file does not appear to be text/markdown.");
+  }
 
   return {
     absolutePath,
     name: path.basename(absolutePath),
-    content,
-    modifiedAt: getModifiedAt(await fsp.stat(absolutePath))
+    content: contentBuffer.toString("utf8"),
+    modifiedAt: getModifiedAt(stats),
+    sizeBytes: getFileSize(stats)
   };
 }
 
@@ -354,6 +392,27 @@ function validateExternalTarget(target) {
   return parsedTarget.toString();
 }
 
+async function validateRevealTarget(target) {
+  if (typeof target !== "string" || !target.trim()) {
+    throw new Error("A file path is required.");
+  }
+
+  const absolutePath = path.resolve(target.trim());
+
+  let stats;
+  try {
+    stats = await fsp.stat(absolutePath);
+  } catch {
+    throw new Error(`File not found: ${absolutePath}`);
+  }
+
+  if (!stats.isFile() && !stats.isDirectory()) {
+    throw new Error(`Unsupported path type: ${absolutePath}`);
+  }
+
+  return absolutePath;
+}
+
 async function sendOpenedTarget(targetPath) {
   if (!mainWindow || mainWindow.isDestroyed()) {
     pendingOpenPath = targetPath;
@@ -500,4 +559,8 @@ ipcMain.handle("app:get-launch-target", async () => {
 });
 ipcMain.handle("shell:open-external", async (_event, target) => {
   await shell.openExternal(validateExternalTarget(target));
+});
+ipcMain.handle("shell:show-item-in-folder", async (_event, target) => {
+  shell.showItemInFolder(await validateRevealTarget(target));
+  return { ok: true };
 });

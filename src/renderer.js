@@ -71,8 +71,12 @@ const elements = {
   titlebarDocumentName: document.querySelector("#titlebarDocumentName"),
   markdownContent: document.querySelector("#markdownContent"),
   linkPreview: document.querySelector("#linkPreview"),
+  linkPreviewIconPath: document.querySelector("#linkPreviewIconPath"),
   linkPreviewKind: document.querySelector("#linkPreviewKind"),
+  linkPreviewSize: document.querySelector("#linkPreviewSize"),
   linkPreviewValue: document.querySelector("#linkPreviewValue"),
+  linkPreviewFooter: document.querySelector("#linkPreviewFooter"),
+  linkPreviewHint: document.querySelector("#linkPreviewHint"),
   emptyState: document.querySelector("#emptyState"),
   statusBanner: document.querySelector("#statusBanner"),
   toggleSettingsButton: document.querySelector("#toggleSettingsButton"),
@@ -522,8 +526,78 @@ function formatEntryModifiedAt(modifiedAt) {
   return `Edited ${SIDEBAR_DATE_FORMATTER.format(date)}`;
 }
 
+function formatFileSize(sizeBytes) {
+  const numericValue = Number(sizeBytes);
+
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return "";
+  }
+
+  if (numericValue < 1024) {
+    return `${numericValue} B`;
+  }
+
+  const units = ["KB", "MB", "GB"];
+  let value = numericValue / 1024;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const precision = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(precision)} ${units[unitIndex]}`;
+}
+
+function formatEntryMeta(entry) {
+  const metadata = [];
+  const fileSize = formatFileSize(entry?.sizeBytes);
+  const modifiedLabel = formatEntryModifiedAt(entry?.modifiedAt);
+
+  if (fileSize) {
+    metadata.push(fileSize);
+  }
+
+  if (modifiedLabel) {
+    metadata.push(modifiedLabel);
+  }
+
+  return metadata.join(" • ");
+}
+
 function normalizeEntryPath(value) {
   return value.split(/[/\\]+/).join("/");
+}
+
+function isMacPlatform() {
+  const platform = navigator.userAgentData?.platform ?? navigator.platform ?? "";
+  return /mac|iphone|ipad|ipod/i.test(platform);
+}
+
+function isWindowsPlatform() {
+  const platform = navigator.userAgentData?.platform ?? navigator.platform ?? "";
+  return /win/i.test(platform);
+}
+
+function getRevealModifierLabel() {
+  return isMacPlatform() ? "⌘" : "Ctrl";
+}
+
+function getRevealTargetLabel() {
+  if (isMacPlatform()) {
+    return "Finder";
+  }
+
+  if (isWindowsPlatform()) {
+    return "File Explorer";
+  }
+
+  return "your file manager";
+}
+
+function isRevealModifierPressed(event) {
+  return isMacPlatform() ? event.metaKey : event.ctrlKey;
 }
 
 function getRelativeEntryPath(absolutePath) {
@@ -568,6 +642,18 @@ function formatLinkPreviewKind(kind) {
   }
 }
 
+function getLinkPreviewIconPath(kind) {
+  switch (kind) {
+    case "website":
+      return "M12 3.75c4.556 0 8.25 3.694 8.25 8.25s-3.694 8.25-8.25 8.25-8.25-3.694-8.25-8.25 3.694-8.25 8.25-8.25Zm0 0c2.184 2.095 3.42 5.04 3.42 8.25s-1.236 6.155-3.42 8.25m0-16.5c-2.184 2.095-3.42 5.04-3.42 8.25s1.236 6.155 3.42 8.25M4.5 12h15";
+    case "email":
+      return "M4.5 7.5h15v9h-15v-9Zm0 0 7.5 5.625L19.5 7.5";
+    case "location":
+    default:
+      return "M8.25 3.75h5.94L18.75 8.3v11.95H8.25V3.75Zm5.25 0V8.25h5.25";
+  }
+}
+
 function getLinkPreviewData(anchor) {
   const destination = anchor?.dataset.linkDestination?.trim();
 
@@ -575,9 +661,15 @@ function getLinkPreviewData(anchor) {
     return null;
   }
 
+  const sizeBytes = Number(anchor.dataset.linkSizeBytes);
+
   return {
     kind: anchor.dataset.linkKind ?? "location",
-    destination
+    destination,
+    sizeLabel: formatFileSize(sizeBytes),
+    hint: anchor.dataset.revealPath
+      ? `Hold ${getRevealModifierLabel()} and click to reveal in ${getRevealTargetLabel()}.`
+      : ""
   };
 }
 
@@ -614,14 +706,29 @@ function hideLinkPreview() {
 function showLinkPreview(anchor, position) {
   const previewData = getLinkPreviewData(anchor);
 
-  if (!previewData || !elements.linkPreview || !elements.linkPreviewKind || !elements.linkPreviewValue) {
+  if (
+    !previewData ||
+    !elements.linkPreview ||
+    !elements.linkPreviewIconPath ||
+    !elements.linkPreviewKind ||
+    !elements.linkPreviewSize ||
+    !elements.linkPreviewValue ||
+    !elements.linkPreviewFooter ||
+    !elements.linkPreviewHint
+  ) {
     hideLinkPreview();
     return;
   }
 
   elements.linkPreview.dataset.kind = previewData.kind;
+  elements.linkPreviewIconPath.setAttribute("d", getLinkPreviewIconPath(previewData.kind));
   elements.linkPreviewKind.textContent = formatLinkPreviewKind(previewData.kind);
+  elements.linkPreviewSize.textContent = previewData.sizeLabel;
+  elements.linkPreviewSize.hidden = !previewData.sizeLabel;
   elements.linkPreviewValue.textContent = previewData.destination;
+  elements.linkPreviewHint.textContent = previewData.hint;
+  elements.linkPreviewHint.hidden = !previewData.hint;
+  elements.linkPreviewFooter.hidden = !previewData.hint;
   elements.linkPreview.hidden = false;
   positionLinkPreview(position.x, position.y);
 }
@@ -662,7 +769,7 @@ function renderFileList() {
     button.className = "file-row";
     button.dataset.path = entry.absolutePath;
     button.dataset.active = String(entry.absolutePath === state.currentPath);
-    const modifiedLabel = formatEntryModifiedAt(entry.modifiedAt);
+    const entryMeta = formatEntryMeta(entry);
 
     const name = document.createElement("span");
     name.className = "file-row-name";
@@ -674,10 +781,10 @@ function renderFileList() {
     relativePath.textContent = entry.relativePath;
     button.append(relativePath);
 
-    if (modifiedLabel) {
+    if (entryMeta) {
       const meta = document.createElement("span");
       meta.className = "file-row-meta";
-      meta.textContent = modifiedLabel;
+      meta.textContent = entryMeta;
       button.append(meta);
     }
 
@@ -697,7 +804,8 @@ async function openMarkdownFile(filePath) {
       absolutePath: file.absolutePath,
       name: file.name,
       relativePath: getRelativeEntryPath(file.absolutePath),
-      modifiedAt: file.modifiedAt ?? null
+      modifiedAt: file.modifiedAt ?? null,
+      sizeBytes: file.sizeBytes ?? null
     });
     elements.titlebarDocumentName.textContent = file.name;
     elements.markdownContent.innerHTML = html;
@@ -711,6 +819,7 @@ async function openMarkdownFile(filePath) {
     });
     requestAnimationFrame(updateReaderScrollState);
   } catch (error) {
+    resetDocumentState();
     reportError(error, "Unable to open the selected Markdown file.");
   }
 }
@@ -728,7 +837,8 @@ function mergeEntryIfMissing(filePath) {
       name: filePath.split(/[\\/]/).at(-1) ?? filePath,
       absolutePath: filePath,
       relativePath: filePath,
-      modifiedAt: null
+      modifiedAt: null,
+      sizeBytes: null
     }
   ];
 
@@ -959,12 +1069,30 @@ function handleMarkdownClick(event) {
   hideLinkPreview();
 
   const markdownPath = anchor.dataset.mdPath;
+  const revealPath = anchor.dataset.revealPath;
   const externalHref = anchor.dataset.external === "true" ? anchor.getAttribute("href") : null;
 
   if (markdownPath) {
     event.preventDefault();
     mergeEntryIfMissing(markdownPath);
     void openMarkdownFile(markdownPath);
+    return;
+  }
+
+  if (revealPath) {
+    event.preventDefault();
+
+    if (!isRevealModifierPressed(event)) {
+      showStatus(`Hold ${getRevealModifierLabel()} and click to reveal this file in ${getRevealTargetLabel()}.`);
+      return;
+    }
+
+    try {
+      void getBridge().showItemInFolder(revealPath);
+      showStatus("");
+    } catch (error) {
+      reportError(error, "Unable to reveal the file in Finder or File Explorer.");
+    }
     return;
   }
 
