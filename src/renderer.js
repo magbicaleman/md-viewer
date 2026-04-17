@@ -663,11 +663,24 @@ function renderFileList() {
     button.dataset.path = entry.absolutePath;
     button.dataset.active = String(entry.absolutePath === state.currentPath);
     const modifiedLabel = formatEntryModifiedAt(entry.modifiedAt);
-    button.innerHTML = `
-      <span class="file-row-name">${entry.name}</span>
-      <span class="file-row-path">${entry.relativePath}</span>
-      ${modifiedLabel ? `<span class="file-row-meta">${modifiedLabel}</span>` : ""}
-    `;
+
+    const name = document.createElement("span");
+    name.className = "file-row-name";
+    name.textContent = entry.name;
+    button.append(name);
+
+    const relativePath = document.createElement("span");
+    relativePath.className = "file-row-path";
+    relativePath.textContent = entry.relativePath;
+    button.append(relativePath);
+
+    if (modifiedLabel) {
+      const meta = document.createElement("span");
+      meta.className = "file-row-meta";
+      meta.textContent = modifiedLabel;
+      button.append(meta);
+    }
+
     elements.fileList.append(button);
   }
 }
