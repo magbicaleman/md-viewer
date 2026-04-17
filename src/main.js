@@ -2,9 +2,12 @@ const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
+const { fileURLToPath, pathToFileURL } = require("node:url");
+const { marked } = require("marked");
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdown", ".mkd"]);
 const SAFE_EXTERNAL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
+const SAFE_RESOURCE_PROTOCOLS = new Set(["http:", "https:", "mailto:", "file:"]);
 const IGNORED_DIRECTORIES = new Set([
   ".git",
   "node_modules",
@@ -83,6 +86,178 @@ function isLikelyBinaryBuffer(buffer) {
   }
 
   return suspiciousByteCount / sampleSize > 0.1;
+}
+
+function escapeHtml(value = "") {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function escapeAttribute(value = "") {
+  return escapeHtml(value);
+}
+
+function splitTarget(target = "") {
+  const hashIndex = target.indexOf("#");
+  const queryIndex = target.indexOf("?");
+  const boundary = [hashIndex, queryIndex].filter((index) => index >= 0).sort((left, right) => left - right)[0];
+
+  if (boundary === undefined) {
+    return {
+      pathname: target,
+      suffix: ""
+    };
+  }
+
+  return {
+    pathname: target.slice(0, boundary),
+    suffix: target.slice(boundary)
+  };
+}
+
+function formatLocalDestination(absolutePath, currentFilePath, suffix = "") {
+  if (!currentFilePath) {
+    return `${normalizeSlashes(absolutePath)}${suffix}`;
+  }
+
+  const relativePath = normalizeSlashes(path.relative(path.dirname(currentFilePath), absolutePath));
+  const displayPath = relativePath || path.basename(absolutePath);
+
+  return `${displayPath}${suffix}`;
+}
+
+function getLocalFileSize(absolutePath) {
+  try {
+    const stats = fs.statSync(absolutePath, { throwIfNoEntry: false });
+    return stats?.isFile() ? stats.size : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildLocalResource(absolutePath, currentFilePath, suffix = "") {
+  const fileHref = pathToFileURL(absolutePath).toString();
+
+  return {
+    kind: MARKDOWN_EXTENSIONS.has(path.extname(absolutePath).toLowerCase()) ? "markdown" : "file",
+    href: `${fileHref}${suffix}`,
+    path: absolutePath,
+    previewKind: "location",
+    previewTarget: formatLocalDestination(absolutePath, currentFilePath, suffix),
+    sizeBytes: getLocalFileSize(absolutePath)
+  };
+}
+
+function resolveResource(rawTarget, currentFilePath) {
+  if (!rawTarget) {
+    return null;
+  }
+
+  const trimmedTarget = rawTarget.trim();
+  const { pathname, suffix } = splitTarget(trimmedTarget);
+
+  if (!pathname && suffix.startsWith("#") && currentFilePath) {
+    return {
+      kind: "location",
+      href: trimmedTarget,
+      previewKind: "location",
+      previewTarget: `${path.basename(currentFilePath)}${suffix}`
+    };
+  }
+
+  try {
+    const url = new URL(trimmedTarget);
+    if (!SAFE_RESOURCE_PROTOCOLS.has(url.protocol)) {
+      return null;
+    }
+
+    if (url.protocol === "file:") {
+      return buildLocalResource(fileURLToPath(url), currentFilePath, `${url.search}${url.hash}`);
+    }
+
+    return {
+      kind: "external",
+      href: url.toString(),
+      previewKind: url.protocol === "mailto:" ? "email" : "website",
+      previewTarget: url.toString()
+    };
+  } catch {
+    if (!currentFilePath) {
+      return null;
+    }
+  }
+
+  const absolutePath = path.resolve(path.dirname(currentFilePath), pathname || ".");
+  return buildLocalResource(absolutePath, currentFilePath, suffix);
+}
+
+function buildMarkdownRenderer(currentFilePath) {
+  const renderer = new marked.Renderer();
+
+  renderer.html = (html) => escapeHtml(html);
+
+  renderer.link = function link({ href, title, tokens }) {
+    const text = this.parser.parseInline(tokens);
+    const resolved = resolveResource(href, currentFilePath);
+
+    if (!resolved) {
+      return `<span class="md-inline-note">${text}</span>`;
+    }
+
+    const titleAttribute = title ? ` title="${escapeAttribute(title)}"` : "";
+    const sizeAttribute = Number.isFinite(resolved.sizeBytes)
+      ? ` data-link-size-bytes="${escapeAttribute(String(resolved.sizeBytes))}"`
+      : "";
+    const previewTargetAttribute = "previewTarget" in resolved
+      ? ` data-link-destination="${escapeAttribute(resolved.previewTarget)}"`
+      : "";
+    const previewAttributes = ` data-link-kind="${escapeAttribute(resolved.previewKind)}"${previewTargetAttribute}${sizeAttribute}`;
+
+    if (resolved.kind === "markdown") {
+      const targetPath = resolved.path ?? href;
+      return `<a href="#" data-md-path="${escapeAttribute(targetPath)}"${previewAttributes}${titleAttribute}>${text}</a>`;
+    }
+
+    if (resolved.kind === "file") {
+      const targetPath = resolved.path ?? href;
+      return `<a href="#" data-reveal-path="${escapeAttribute(targetPath)}"${previewAttributes}${titleAttribute}>${text}</a>`;
+    }
+
+    if (resolved.kind === "location") {
+      return `<a href="${escapeAttribute(resolved.href)}"${previewAttributes}${titleAttribute}>${text}</a>`;
+    }
+
+    return `<a href="${escapeAttribute(resolved.href)}" data-external="true"${previewAttributes}${titleAttribute}>${text}</a>`;
+  };
+
+  renderer.image = function image({ href, title, text }) {
+    const resolved = resolveResource(href, currentFilePath);
+
+    if (!resolved || resolved.kind === "markdown") {
+      return `<span class="md-inline-note">[image unavailable]</span>`;
+    }
+
+    const titleAttribute = title ? ` title="${escapeAttribute(title)}"` : "";
+    const altText = escapeAttribute(text ?? "");
+
+    return `<img src="${escapeAttribute(resolved.href)}" alt="${altText}"${titleAttribute} loading="lazy" />`;
+  };
+
+  return renderer;
+}
+
+function renderMarkdown(markdown, currentFilePath) {
+  const renderer = buildMarkdownRenderer(currentFilePath);
+
+  return marked.parse(typeof markdown === "string" ? markdown : String(markdown ?? ""), {
+    gfm: true,
+    breaks: true,
+    renderer
+  });
 }
 
 async function createMarkdownEntry(absolutePath, basePath, stats) {
@@ -456,7 +631,7 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     }
   });
 
@@ -539,6 +714,9 @@ ipcMain.handle("dialog:open-folder", async () =>
 
 ipcMain.handle("path:inspect", async (_event, targetPath) => inspectTarget(targetPath));
 ipcMain.handle("file:read-markdown", async (_event, filePath) => readMarkdownFile(filePath));
+ipcMain.handle("markdown:render", async (_event, markdown, currentFilePath) =>
+  renderMarkdown(markdown, typeof currentFilePath === "string" ? currentFilePath : "")
+);
 ipcMain.handle("watch:set-context", async (_event, context) => {
   const validatedContext = await validateWatchContext(context);
   applyWatchContext(validatedContext);

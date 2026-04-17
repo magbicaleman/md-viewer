@@ -796,7 +796,7 @@ async function openMarkdownFile(filePath) {
   try {
     const bridge = getBridge();
     const file = await bridge.readMarkdownFile(filePath);
-    const html = bridge.renderMarkdown(file.content, file.absolutePath);
+    const html = await bridge.renderMarkdown(file.content, file.absolutePath);
 
     hideLinkPreview();
     state.currentPath = file.absolutePath;
