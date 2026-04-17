@@ -352,6 +352,7 @@ function applyPreferences() {
   syncThemeSelectShell();
   syncAllRangeControls();
   setSourceInfo();
+  updateBlockedResourceNotes();
   elements.toggleSidebarButton.setAttribute("aria-pressed", String(state.preferences.sidebarOpen));
   elements.toggleSidebarButton.setAttribute(
     "aria-label",
@@ -455,6 +456,30 @@ function formatRootPath(rootPath) {
   }
 
   return `.../${visibleSegments}`;
+}
+
+function formatBlockedRootPath(rootPath) {
+  const formatted = formatRootPath(rootPath);
+  return formatted === "No source selected" ? "the opened folder" : formatted;
+}
+
+function getBlockedResourceMessage(note) {
+  const blockedType = note.dataset.blockedType;
+  const blockedTarget = note.dataset.blockedTarget || "[unknown path]";
+  const blockedRoot = formatBlockedRootPath(note.dataset.blockedRoot || "");
+
+  if (blockedType === "image") {
+    return `[image blocked: tries to open ${blockedTarget}, which is outside the folder you opened (${blockedRoot})]`;
+  }
+
+  const blockedLabel = note.dataset.blockedLabel || "Link";
+  return `${blockedLabel} [blocked: tries to open ${blockedTarget}, which is outside the folder you opened (${blockedRoot})]`;
+}
+
+function updateBlockedResourceNotes() {
+  for (const note of elements.markdownContent.querySelectorAll(".md-inline-note[data-blocked-type]")) {
+    note.textContent = getBlockedResourceMessage(note);
+  }
 }
 
 function getBridge() {
@@ -796,7 +821,7 @@ async function openMarkdownFile(filePath) {
   try {
     const bridge = getBridge();
     const file = await bridge.readMarkdownFile(filePath);
-    const html = await bridge.renderMarkdown(file.content, file.absolutePath);
+    const html = await bridge.renderMarkdown(file.content, file.absolutePath, state.rootPath);
 
     hideLinkPreview();
     state.currentPath = file.absolutePath;
@@ -809,6 +834,7 @@ async function openMarkdownFile(filePath) {
     });
     elements.titlebarDocumentName.textContent = file.name;
     elements.markdownContent.innerHTML = html;
+    updateBlockedResourceNotes();
     updateEmptyState();
     renderFileList();
     showStatus("");

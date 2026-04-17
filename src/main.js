@@ -130,6 +130,30 @@ function formatLocalDestination(absolutePath, currentFilePath, suffix = "") {
   return `${displayPath}${suffix}`;
 }
 
+function formatBlockedResourceTarget(targetPath, rootPath, currentFilePath, suffix = "") {
+  if (!targetPath) {
+    return "[unknown path]";
+  }
+
+  if (currentFilePath) {
+    return formatLocalDestination(targetPath, currentFilePath, suffix);
+  }
+
+  if (rootPath) {
+    return normalizeSlashes(path.relative(rootPath, targetPath)) || path.basename(targetPath);
+  }
+
+  return normalizeSlashes(targetPath);
+}
+
+function formatOpenedRootLabel(rootPath) {
+  if (!rootPath) {
+    return "the opened folder";
+  }
+
+  return normalizeSlashes(rootPath);
+}
+
 function getLocalFileSize(absolutePath) {
   try {
     const stats = fs.statSync(absolutePath, { throwIfNoEntry: false });
@@ -152,7 +176,30 @@ function buildLocalResource(absolutePath, currentFilePath, suffix = "") {
   };
 }
 
-function resolveResource(rawTarget, currentFilePath) {
+function buildBlockedResource(targetPath, currentFilePath, rootPath, suffix = "") {
+  const displayPath = targetPath
+    ? formatLocalDestination(targetPath, currentFilePath, suffix)
+    : "[unknown path]";
+  const readableTarget = formatBlockedResourceTarget(targetPath, rootPath, currentFilePath, suffix);
+  const openedRootLabel = formatOpenedRootLabel(rootPath);
+
+  return {
+    kind: "blocked",
+    previewKind: "location",
+    previewTarget: displayPath,
+    readableTarget,
+    rootPath: rootPath ?? "",
+    openedRootLabel,
+    reason: "Blocked: local resources must stay inside the folder you opened.",
+    path: targetPath ?? null
+  };
+}
+
+function extractTokenText(tokens = []) {
+  return tokens.map((token) => token?.raw ?? "").join("").trim();
+}
+
+function resolveResource(rawTarget, currentFilePath, rootPath) {
   if (!rawTarget) {
     return null;
   }
@@ -176,7 +223,12 @@ function resolveResource(rawTarget, currentFilePath) {
     }
 
     if (url.protocol === "file:") {
-      return buildLocalResource(fileURLToPath(url), currentFilePath, `${url.search}${url.hash}`);
+      const localPath = fileURLToPath(url);
+      if (!rootPath || !isWithinDirectory(rootPath, localPath)) {
+        return buildBlockedResource(localPath, currentFilePath, rootPath, `${url.search}${url.hash}`);
+      }
+
+      return buildLocalResource(localPath, currentFilePath, `${url.search}${url.hash}`);
     }
 
     return {
@@ -192,17 +244,22 @@ function resolveResource(rawTarget, currentFilePath) {
   }
 
   const absolutePath = path.resolve(path.dirname(currentFilePath), pathname || ".");
+  if (!rootPath || !isWithinDirectory(rootPath, absolutePath)) {
+    return buildBlockedResource(absolutePath, currentFilePath, rootPath, suffix);
+  }
+
   return buildLocalResource(absolutePath, currentFilePath, suffix);
 }
 
-function buildMarkdownRenderer(currentFilePath) {
+function buildMarkdownRenderer(currentFilePath, rootPath) {
   const renderer = new marked.Renderer();
 
   renderer.html = (html) => escapeHtml(html);
 
   renderer.link = function link({ href, title, tokens }) {
     const text = this.parser.parseInline(tokens);
-    const resolved = resolveResource(href, currentFilePath);
+    const plainText = extractTokenText(tokens) || "Link";
+    const resolved = resolveResource(href, currentFilePath, rootPath);
 
     if (!resolved) {
       return `<span class="md-inline-note">${text}</span>`;
@@ -214,6 +271,9 @@ function buildMarkdownRenderer(currentFilePath) {
       : "";
     const previewTargetAttribute = "previewTarget" in resolved
       ? ` data-link-destination="${escapeAttribute(resolved.previewTarget)}"`
+      : "";
+    const blockedReasonAttribute = resolved.reason
+      ? ` data-blocked-reason="${escapeAttribute(resolved.reason)}"`
       : "";
     const previewAttributes = ` data-link-kind="${escapeAttribute(resolved.previewKind)}"${previewTargetAttribute}${sizeAttribute}`;
 
@@ -227,6 +287,10 @@ function buildMarkdownRenderer(currentFilePath) {
       return `<a href="#" data-reveal-path="${escapeAttribute(targetPath)}"${previewAttributes}${titleAttribute}>${text}</a>`;
     }
 
+    if (resolved.kind === "blocked") {
+      return `<span class="md-inline-note" data-blocked-type="link" data-blocked-label="${escapeAttribute(plainText)}" data-blocked-target="${escapeAttribute(resolved.readableTarget)}" data-blocked-root="${escapeAttribute(resolved.rootPath)}" data-link-kind="${escapeAttribute(resolved.previewKind)}"${previewTargetAttribute}${blockedReasonAttribute}>${escapeHtml(plainText)}</span>`;
+    }
+
     if (resolved.kind === "location") {
       return `<a href="${escapeAttribute(resolved.href)}"${previewAttributes}${titleAttribute}>${text}</a>`;
     }
@@ -235,10 +299,14 @@ function buildMarkdownRenderer(currentFilePath) {
   };
 
   renderer.image = function image({ href, title, text }) {
-    const resolved = resolveResource(href, currentFilePath);
+    const resolved = resolveResource(href, currentFilePath, rootPath);
 
     if (!resolved || resolved.kind === "markdown") {
       return `<span class="md-inline-note">[image unavailable]</span>`;
+    }
+
+    if (resolved.kind === "blocked") {
+      return `<span class="md-inline-note" data-blocked-type="image" data-blocked-target="${escapeAttribute(resolved.readableTarget)}" data-blocked-root="${escapeAttribute(resolved.rootPath)}">[image blocked]</span>`;
     }
 
     const titleAttribute = title ? ` title="${escapeAttribute(title)}"` : "";
@@ -250,8 +318,8 @@ function buildMarkdownRenderer(currentFilePath) {
   return renderer;
 }
 
-function renderMarkdown(markdown, currentFilePath) {
-  const renderer = buildMarkdownRenderer(currentFilePath);
+function renderMarkdown(markdown, currentFilePath, rootPath) {
+  const renderer = buildMarkdownRenderer(currentFilePath, rootPath);
 
   return marked.parse(typeof markdown === "string" ? markdown : String(markdown ?? ""), {
     gfm: true,
@@ -714,8 +782,12 @@ ipcMain.handle("dialog:open-folder", async () =>
 
 ipcMain.handle("path:inspect", async (_event, targetPath) => inspectTarget(targetPath));
 ipcMain.handle("file:read-markdown", async (_event, filePath) => readMarkdownFile(filePath));
-ipcMain.handle("markdown:render", async (_event, markdown, currentFilePath) =>
-  renderMarkdown(markdown, typeof currentFilePath === "string" ? currentFilePath : "")
+ipcMain.handle("markdown:render", async (_event, markdown, currentFilePath, rootPath) =>
+  renderMarkdown(
+    markdown,
+    typeof currentFilePath === "string" ? currentFilePath : "",
+    typeof rootPath === "string" ? rootPath : ""
+  )
 );
 ipcMain.handle("watch:set-context", async (_event, context) => {
   const validatedContext = await validateWatchContext(context);

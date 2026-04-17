@@ -5,7 +5,8 @@ contextBridge.exposeInMainWorld("mdViewer", {
   chooseFolder: () => ipcRenderer.invoke("dialog:open-folder"),
   inspectPath: (targetPath) => ipcRenderer.invoke("path:inspect", targetPath),
   readMarkdownFile: (filePath) => ipcRenderer.invoke("file:read-markdown", filePath),
-  renderMarkdown: (markdown, currentFilePath) => ipcRenderer.invoke("markdown:render", markdown, currentFilePath),
+  renderMarkdown: (markdown, currentFilePath, rootPath) =>
+    ipcRenderer.invoke("markdown:render", markdown, currentFilePath, rootPath),
   setWatchContext: (context) => ipcRenderer.invoke("watch:set-context", context),
   clearWatchContext: () => ipcRenderer.invoke("watch:clear"),
   getLaunchTarget: () => ipcRenderer.invoke("app:get-launch-target"),
