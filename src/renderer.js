@@ -2,6 +2,7 @@ const STORAGE_KEY = "md-viewer-preferences";
 const DEFAULT_SIDEBAR_WIDTH = 336;
 const MIN_SIDEBAR_WIDTH = 300;
 const MAX_SIDEBAR_WIDTH = 560;
+const RANGE_BUBBLE_IDLE_DELAY_MS = 1400;
 
 const state = {
   sourceKind: null,
@@ -10,7 +11,8 @@ const state = {
   currentPath: null,
   filterText: "",
   preferences: loadPreferences(),
-  sidebarResizeSession: null
+  sidebarResizeSession: null,
+  rangeBubbleTimeouts: new Map()
 };
 
 function normalizeReaderWidth(value) {
@@ -48,6 +50,10 @@ const elements = {
   toggleSidebarButton: document.querySelector("#toggleSidebarButton"),
   toggleAdvancedButton: document.querySelector("#toggleAdvancedButton"),
   sidebarResizeHandle: document.querySelector("#sidebarResizeHandle"),
+  themeSelectShell: document.querySelector("#themeSelectShell"),
+  themeSelectTrigger: document.querySelector("#themeSelectTrigger"),
+  themeSelectLabel: document.querySelector("#themeSelectLabel"),
+  themeSelectMenu: document.querySelector("#themeSelectMenu"),
   pathForm: document.querySelector("#pathForm"),
   pathInput: document.querySelector("#pathInput"),
   filterInput: document.querySelector("#filterInput"),
@@ -64,7 +70,9 @@ const elements = {
   readerContent: document.querySelector(".reader-content"),
   sidebar: document.querySelector(".sidebar"),
   themeSelect: document.querySelector("#themeSelect"),
+  fontSizeValue: document.querySelector("#fontSizeValue"),
   fontSizeInput: document.querySelector("#fontSizeInput"),
+  readerWidthValue: document.querySelector("#readerWidthValue"),
   readerWidthInput: document.querySelector("#readerWidthInput")
 };
 
@@ -93,8 +101,214 @@ function savePreferences() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.preferences));
 }
 
+function getThemeOptionButtons() {
+  return Array.from(elements.themeSelectMenu?.querySelectorAll(".theme-option") ?? []);
+}
+
+function getSelectedThemeLabel() {
+  return elements.themeSelect.selectedOptions[0]?.textContent?.trim() ?? "Theme";
+}
+
+function setThemeMenuOpen(isOpen) {
+  if (!elements.themeSelectShell || !elements.themeSelectTrigger || !elements.themeSelectMenu) {
+    return;
+  }
+
+  elements.themeSelectShell.dataset.themeMenuOpen = isOpen ? "true" : "false";
+  elements.themeSelectTrigger.setAttribute("aria-expanded", String(isOpen));
+  elements.themeSelectMenu.hidden = !isOpen;
+}
+
+function focusThemeOption(themeValue = elements.themeSelect.value) {
+  const optionToFocus = getThemeOptionButtons().find((button) => button.dataset.value === themeValue) ?? getThemeOptionButtons()[0];
+  optionToFocus?.focus();
+}
+
+function closeThemeMenu({ restoreFocus = false } = {}) {
+  setThemeMenuOpen(false);
+
+  if (restoreFocus) {
+    elements.themeSelectTrigger?.focus();
+  }
+}
+
+function openThemeMenu({ focusSelected = true } = {}) {
+  setThemeMenuOpen(true);
+
+  if (focusSelected) {
+    requestAnimationFrame(() => {
+      focusThemeOption();
+    });
+  }
+}
+
+function syncThemeMenuSelection() {
+  for (const button of getThemeOptionButtons()) {
+    const isSelected = button.dataset.value === elements.themeSelect.value;
+    button.dataset.selected = String(isSelected);
+    button.setAttribute("aria-selected", String(isSelected));
+  }
+}
+
+function renderThemeOptions() {
+  if (!elements.themeSelectMenu) {
+    return;
+  }
+
+  elements.themeSelectMenu.innerHTML = "";
+
+  for (const option of Array.from(elements.themeSelect.options)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "theme-option";
+    button.dataset.value = option.value;
+    button.dataset.themeValue = option.value;
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", String(option.selected));
+    button.dataset.selected = String(option.selected);
+    button.innerHTML = `
+      <span class="theme-option-swatch" aria-hidden="true"></span>
+      <span class="theme-option-label">${option.textContent}</span>
+      <svg class="theme-option-check" viewBox="0 0 20 20" aria-hidden="true">
+        <path d="m4.5 10.5 3.3 3.3 7.7-7.7"></path>
+      </svg>
+    `;
+    elements.themeSelectMenu.append(button);
+  }
+}
+
+function syncThemeSelectShell() {
+  if (elements.themeSelectShell) {
+    elements.themeSelectShell.dataset.themeValue = state.preferences.theme;
+  }
+
+  if (elements.themeSelectLabel) {
+    elements.themeSelectLabel.textContent = getSelectedThemeLabel();
+  }
+
+  syncThemeMenuSelection();
+}
+
+function syncAllRangeControls() {
+  syncRangeControl(elements.fontSizeInput, elements.fontSizeValue);
+  syncRangeControl(elements.readerWidthInput, elements.readerWidthValue);
+}
+
+function handleThemeMenuKeydown(event) {
+  const optionButtons = getThemeOptionButtons();
+
+  if (optionButtons.length === 0) {
+    return;
+  }
+
+  const currentIndex = optionButtons.findIndex((button) => button === document.activeElement);
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeThemeMenu({ restoreFocus: true });
+    return;
+  }
+
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    optionButtons[(currentIndex + 1 + optionButtons.length) % optionButtons.length]?.focus();
+    return;
+  }
+
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    optionButtons[(currentIndex - 1 + optionButtons.length) % optionButtons.length]?.focus();
+    return;
+  }
+
+  if (event.key === "Home") {
+    event.preventDefault();
+    optionButtons[0]?.focus();
+    return;
+  }
+
+  if (event.key === "End") {
+    event.preventDefault();
+    optionButtons.at(-1)?.focus();
+    return;
+  }
+
+  if (event.key === "Tab") {
+    closeThemeMenu();
+  }
+}
+
+function setRangeBubbleActive(input, isActive, delay = 0) {
+  const shell = input?.closest(".range-shell");
+
+  if (!shell || !input?.id) {
+    return;
+  }
+
+  const existingTimeout = state.rangeBubbleTimeouts.get(input.id);
+
+  if (existingTimeout) {
+    window.clearTimeout(existingTimeout);
+    state.rangeBubbleTimeouts.delete(input.id);
+  }
+
+  if (delay > 0) {
+    const timeout = window.setTimeout(() => {
+      shell.dataset.bubbleActive = isActive ? "true" : "false";
+      state.rangeBubbleTimeouts.delete(input.id);
+    }, delay);
+
+    state.rangeBubbleTimeouts.set(input.id, timeout);
+    return;
+  }
+
+  shell.dataset.bubbleActive = isActive ? "true" : "false";
+}
+
+function syncRangeControl(input, valueOutput) {
+  if (!input || !valueOutput) {
+    return;
+  }
+
+  const min = Number(input.min ?? 0);
+  const max = Number(input.max ?? 100);
+  const value = Number(input.value ?? min);
+  const ratio = max === min ? 0 : (value - min) / (max - min);
+  const progress = `${Math.min(100, Math.max(0, ratio * 100))}%`;
+  const displayValue = Number.isInteger(value) ? String(value) : value.toFixed(0);
+  const shell = valueOutput.closest(".range-shell");
+  const displaySuffix = input.id === "readerWidthInput" ? "%" : "";
+
+  valueOutput.textContent = `${displayValue}${displaySuffix}`;
+
+  input.style.setProperty("--range-progress", progress);
+
+  if (shell) {
+    shell.style.setProperty("--range-progress", progress);
+    shell.dataset.bubbleActive ||= "false";
+  }
+
+  if (shell && input.offsetWidth > 0) {
+    const thumbWidth = 28;
+    const shellWidth = shell.offsetWidth;
+    const bubbleWidth = valueOutput.offsetWidth || 54;
+    const bubbleCenter = input.offsetLeft + ratio * Math.max(0, input.offsetWidth - thumbWidth) + thumbWidth / 2;
+    const minCenter = bubbleWidth / 2;
+    const maxCenter = Math.max(minCenter, shellWidth - bubbleWidth / 2);
+    const clampedCenter = Math.min(maxCenter, Math.max(minCenter, bubbleCenter));
+    const tailOffset = Math.min(bubbleWidth - 12, Math.max(12, bubbleCenter - clampedCenter + bubbleWidth / 2));
+
+    valueOutput.style.left = `${clampedCenter}px`;
+    valueOutput.style.setProperty("--bubble-tail-offset", `${tailOffset}px`);
+  } else {
+    valueOutput.style.left = progress;
+    valueOutput.style.setProperty("--bubble-tail-offset", "50%");
+  }
+}
+
 function applyPreferences() {
   document.body.dataset.theme = state.preferences.theme;
+  getBridge().setWindowTheme(state.preferences.theme);
   document.body.dataset.sidebar = state.preferences.sidebarOpen ? "open" : "closed";
   document.documentElement.style.setProperty("--reader-font-size", `${state.preferences.fontSize}px`);
   document.documentElement.style.setProperty("--reader-width", `${state.preferences.readerWidth}%`);
@@ -103,6 +317,8 @@ function applyPreferences() {
   elements.themeSelect.value = state.preferences.theme;
   elements.fontSizeInput.value = String(state.preferences.fontSize);
   elements.readerWidthInput.value = String(state.preferences.readerWidth);
+  syncThemeSelectShell();
+  syncAllRangeControls();
   elements.toggleSidebarButton.setAttribute("aria-pressed", String(state.preferences.sidebarOpen));
   elements.toggleSidebarButton.setAttribute(
     "aria-label",
@@ -336,6 +552,11 @@ function toggleAdvancedPanel(forceOpen) {
 
 function toggleSidebar(forceOpen) {
   state.preferences.sidebarOpen = typeof forceOpen === "boolean" ? forceOpen : !state.preferences.sidebarOpen;
+
+  if (!state.preferences.sidebarOpen) {
+    clearSidebarResizeSession();
+  }
+
   applyPreferences();
   savePreferences();
 }
@@ -347,12 +568,29 @@ function syncSettingsButton() {
   elements.toggleSettingsButton.setAttribute("title", isOpen ? "Hide display controls" : "Show display controls");
 }
 
+function clearSidebarResizeSession({ pointerId, persist = true } = {}) {
+  const activePointerId = pointerId ?? state.sidebarResizeSession?.pointerId;
+
+  state.sidebarResizeSession = null;
+  delete document.body.dataset.resizingSidebar;
+
+  if (typeof activePointerId === "number" && elements.sidebarResizeHandle.hasPointerCapture(activePointerId)) {
+    elements.sidebarResizeHandle.releasePointerCapture(activePointerId);
+  }
+
+  if (persist) {
+    savePreferences();
+  }
+}
+
 function startSidebarResize(pointerEvent) {
   if (!state.preferences.sidebarOpen || window.innerWidth <= 980) {
     return;
   }
 
   pointerEvent.preventDefault();
+
+  clearSidebarResizeSession({ persist: false });
 
   state.sidebarResizeSession = {
     pointerId: pointerEvent.pointerId,
@@ -365,7 +603,7 @@ function startSidebarResize(pointerEvent) {
 }
 
 function handleSidebarResize(pointerEvent) {
-  if (!state.sidebarResizeSession) {
+  if (!state.sidebarResizeSession || pointerEvent.pointerId !== state.sidebarResizeSession.pointerId) {
     return;
   }
 
@@ -380,18 +618,23 @@ function stopSidebarResize(pointerEvent) {
 
   const { pointerId } = state.sidebarResizeSession;
 
+  if (typeof pointerEvent?.pointerId === "number" && pointerEvent.pointerId !== pointerId) {
+    return;
+  }
+
   if (typeof pointerEvent?.clientX === "number") {
     handleSidebarResize(pointerEvent);
   }
 
-  state.sidebarResizeSession = null;
-  delete document.body.dataset.resizingSidebar;
+  clearSidebarResizeSession({ pointerId });
+}
 
-  if (elements.sidebarResizeHandle.hasPointerCapture(pointerId)) {
-    elements.sidebarResizeHandle.releasePointerCapture(pointerId);
+function handleSidebarResizeLostCapture(pointerEvent) {
+  if (!state.sidebarResizeSession || pointerEvent.pointerId !== state.sidebarResizeSession.pointerId) {
+    return;
   }
 
-  savePreferences();
+  clearSidebarResizeSession({ pointerId: pointerEvent.pointerId });
 }
 
 function handleSidebarResizeKeydown(event) {
@@ -442,6 +685,9 @@ function handleMarkdownClick(event) {
 }
 
 function bindEvents() {
+  renderThemeOptions();
+  syncThemeSelectShell();
+
   elements.openFileButton.addEventListener("click", async () => {
     try {
       const target = await getBridge().chooseFile();
@@ -482,6 +728,7 @@ function bindEvents() {
   elements.sidebarResizeHandle.addEventListener("pointermove", handleSidebarResize);
   elements.sidebarResizeHandle.addEventListener("pointerup", stopSidebarResize);
   elements.sidebarResizeHandle.addEventListener("pointercancel", stopSidebarResize);
+  elements.sidebarResizeHandle.addEventListener("lostpointercapture", handleSidebarResizeLostCapture);
   elements.sidebarResizeHandle.addEventListener("keydown", handleSidebarResizeKeydown);
 
   elements.pathForm.addEventListener("submit", (event) => {
@@ -511,7 +758,10 @@ function bindEvents() {
   elements.toggleSettingsButton.addEventListener("click", () => {
     elements.settingsPanel.hidden = !elements.settingsPanel.hidden;
     syncSettingsButton();
-    requestAnimationFrame(updateReaderScrollState);
+    requestAnimationFrame(() => {
+      syncAllRangeControls();
+      updateReaderScrollState();
+    });
   });
 
   elements.themeSelect.addEventListener("change", (event) => {
@@ -520,19 +770,109 @@ function bindEvents() {
     savePreferences();
   });
 
+  elements.themeSelectTrigger.addEventListener("click", () => {
+    const isOpen = elements.themeSelectShell.dataset.themeMenuOpen === "true";
+
+    if (isOpen) {
+      closeThemeMenu();
+      return;
+    }
+
+    openThemeMenu();
+  });
+
+  elements.themeSelectTrigger.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openThemeMenu();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      closeThemeMenu();
+    }
+  });
+
+  elements.themeSelectMenu.addEventListener("click", (event) => {
+    const optionButton = event.target.closest(".theme-option");
+
+    if (!optionButton) {
+      return;
+    }
+
+    if (elements.themeSelect.value !== optionButton.dataset.value) {
+      elements.themeSelect.value = optionButton.dataset.value;
+      elements.themeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    closeThemeMenu({ restoreFocus: true });
+  });
+
+  elements.themeSelectMenu.addEventListener("keydown", handleThemeMenuKeydown);
+
+  document.addEventListener("pointerdown", (event) => {
+    if (elements.themeSelectShell.dataset.themeMenuOpen !== "true") {
+      return;
+    }
+
+    if (elements.themeSelectShell.contains(event.target)) {
+      return;
+    }
+
+    closeThemeMenu();
+  });
+
   elements.fontSizeInput.addEventListener("input", (event) => {
     state.preferences.fontSize = Number(event.target.value);
+    setRangeBubbleActive(elements.fontSizeInput, true);
+    syncRangeControl(elements.fontSizeInput, elements.fontSizeValue);
     applyPreferences();
     savePreferences();
+    setRangeBubbleActive(elements.fontSizeInput, false, RANGE_BUBBLE_IDLE_DELAY_MS);
   });
 
   elements.readerWidthInput.addEventListener("input", (event) => {
     state.preferences.readerWidth = Number(event.target.value);
+    setRangeBubbleActive(elements.readerWidthInput, true);
+    syncRangeControl(elements.readerWidthInput, elements.readerWidthValue);
     applyPreferences();
     savePreferences();
+    setRangeBubbleActive(elements.readerWidthInput, false, RANGE_BUBBLE_IDLE_DELAY_MS);
   });
 
+  for (const input of [elements.fontSizeInput, elements.readerWidthInput]) {
+    input.addEventListener("pointerdown", () => {
+      setRangeBubbleActive(input, true);
+    });
+
+    input.addEventListener("focus", () => {
+      setRangeBubbleActive(input, true);
+    });
+
+    input.addEventListener("pointerup", () => {
+      setRangeBubbleActive(input, false, RANGE_BUBBLE_IDLE_DELAY_MS);
+    });
+
+    input.addEventListener("pointercancel", () => {
+      setRangeBubbleActive(input, false, RANGE_BUBBLE_IDLE_DELAY_MS);
+    });
+
+    input.addEventListener("blur", () => {
+      setRangeBubbleActive(input, false, 180);
+    });
+  }
+
   elements.markdownContent.addEventListener("click", handleMarkdownClick);
+
+  if (typeof ResizeObserver !== "undefined") {
+    const rangeLayoutObserver = new ResizeObserver(() => {
+      syncAllRangeControls();
+    });
+
+    rangeLayoutObserver.observe(elements.settingsPanel);
+    rangeLayoutObserver.observe(elements.fontSizeInput);
+    rangeLayoutObserver.observe(elements.readerWidthInput);
+  }
 }
 
 async function initialize() {
@@ -545,6 +885,9 @@ async function initialize() {
     bindEvents();
     syncSettingsButton();
     updateReaderScrollState();
+    requestAnimationFrame(() => {
+      syncAllRangeControls();
+    });
 
     const bridge = getBridge();
     const launchTarget = await bridge.getLaunchTarget();
@@ -569,8 +912,24 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 window.addEventListener("resize", () => {
+  if (state.sidebarResizeSession) {
+    clearSidebarResizeSession();
+  }
+
   applyPreferences();
   updateReaderScrollState();
+});
+
+window.addEventListener("blur", () => {
+  if (state.sidebarResizeSession) {
+    clearSidebarResizeSession();
+  }
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && state.sidebarResizeSession) {
+    clearSidebarResizeSession();
+  }
 });
 
 void initialize();

@@ -109,6 +109,7 @@ contextBridge.exposeInMainWorld("mdViewer", {
   renderMarkdown,
   getLaunchTarget: () => ipcRenderer.invoke("app:get-launch-target"),
   openExternal: (target) => ipcRenderer.invoke("shell:open-external", target),
+  setWindowTheme: (theme) => ipcRenderer.send("window:set-theme", theme),
   onTargetOpened: (handler) => {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on("target:opened", listener);

@@ -12,6 +12,11 @@ const IGNORED_DIRECTORIES = new Set([
   ".turbo",
   ".cache"
 ]);
+const WINDOW_THEME_BACKGROUNDS = {
+  paper: "#f7f4ee",
+  mist: "#edf2f4",
+  graphite: "#171b20"
+};
 
 let mainWindow = null;
 let pendingOpenPath = null;
@@ -181,7 +186,7 @@ function createWindow() {
     height: 920,
     minWidth: 1024,
     minHeight: 720,
-    backgroundColor: "#f7f4ee",
+    backgroundColor: WINDOW_THEME_BACKGROUNDS.paper,
     icon: appIconPath,
     autoHideMenuBar: true,
     titleBarStyle: "hiddenInset",
@@ -211,6 +216,15 @@ function createWindow() {
     mainWindow = null;
   });
 }
+
+ipcMain.on("window:set-theme", (_event, theme) => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  const backgroundColor = WINDOW_THEME_BACKGROUNDS[theme] ?? WINDOW_THEME_BACKGROUNDS.paper;
+  mainWindow.setBackgroundColor(backgroundColor);
+});
 
 app.whenReady().then(() => {
   pendingOpenPath = getLaunchPath();

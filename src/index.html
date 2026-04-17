@@ -23,18 +23,22 @@
             aria-label="Toggle sidebar"
             title="Toggle sidebar"
           >
-            <span class="button-panel-glyph" aria-hidden="true">
-              <span></span>
-              <span></span>
-            </span>
+            <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3.75" y="4.5" width="4.25" height="15" rx="1.3"></rect>
+              <rect x="9.875" y="4.5" width="4.25" height="15" rx="1.3"></rect>
+              <rect x="16" y="4.5" width="4.25" height="15" rx="1.3"></rect>
+            </svg>
             <span class="button-label">Library</span>
           </button>
           <button id="toggleSettingsButton" class="button button-outline button-with-icon" type="button">
-            <span class="button-sliders-glyph" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-            </span>
+            <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 6.5h16"></path>
+              <path d="M4 12h16"></path>
+              <path d="M4 17.5h16"></path>
+              <circle cx="9" cy="6.5" r="1.7"></circle>
+              <circle cx="15" cy="12" r="1.7"></circle>
+              <circle cx="11" cy="17.5" r="1.7"></circle>
+            </svg>
             <span class="button-label">Display</span>
           </button>
         </div>
@@ -43,23 +47,64 @@
       <main class="reader-shell">
         <div class="reader-shell-top">
           <section id="settingsPanel" class="settings-panel">
-            <label class="control">
-              <span>Theme</span>
-              <select id="themeSelect" class="select-input">
-                <option value="paper">Paper</option>
-                <option value="mist">Mist</option>
-                <option value="graphite">Graphite</option>
-              </select>
+            <div class="control control-theme">
+              <span class="control-label">Theme</span>
+              <div id="themeSelectShell" class="select-shell" data-theme-value="paper" data-theme-menu-open="false">
+                <select id="themeSelect" class="theme-native-select" tabindex="-1" aria-hidden="true">
+                  <option value="paper">Paper</option>
+                  <option value="mist">Mist</option>
+                  <option value="graphite">Graphite</option>
+                </select>
+                <button
+                  id="themeSelectTrigger"
+                  class="theme-trigger"
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded="false"
+                  aria-controls="themeSelectMenu"
+                >
+                  <span class="theme-swatch" aria-hidden="true"></span>
+                  <span id="themeSelectLabel" class="theme-trigger-label">Paper</span>
+                  <svg class="select-chevron" viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M5.25 7.75 10 12.5l4.75-4.75"></path>
+                  </svg>
+                </button>
+                <div id="themeSelectMenu" class="theme-menu" role="listbox" aria-label="Theme options" hidden></div>
+              </div>
+            </div>
+
+            <label class="control control-range">
+              <span class="control-label">Type Size</span>
+              <div class="range-shell">
+                <span id="fontSizeValue" class="range-value" aria-hidden="true">18</span>
+                <div class="range-row">
+                  <span class="range-edge range-edge-type range-edge-type-sm" aria-hidden="true">A</span>
+                  <input id="fontSizeInput" class="range-input" type="range" min="15" max="22" step="1" />
+                  <span class="range-edge range-edge-type range-edge-type-lg" aria-hidden="true">A</span>
+                </div>
+              </div>
             </label>
 
-            <label class="control">
-              <span>Type Size</span>
-              <input id="fontSizeInput" type="range" min="15" max="22" step="1" />
-            </label>
-
-            <label class="control">
-              <span>Reading Width</span>
-              <input id="readerWidthInput" type="range" min="55" max="100" step="1" />
+            <label class="control control-range">
+              <span class="control-label">Reading Width</span>
+              <div class="range-shell">
+                <span id="readerWidthValue" class="range-value" aria-hidden="true">82</span>
+                <div class="range-row">
+                  <span class="range-edge range-edge-width range-edge-width-sm" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </span>
+                  <input id="readerWidthInput" class="range-input" type="range" min="55" max="100" step="1" />
+                  <span class="range-edge range-edge-width range-edge-width-lg" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </span>
+                </div>
+              </div>
             </label>
           </section>
 
