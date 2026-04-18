@@ -372,17 +372,26 @@ function syncRangeControl(input, valueOutput) {
   }
 }
 
-function applyPreferences() {
+function applyThemePreferences() {
   document.body.dataset.theme = state.preferences.theme;
   getBridge().setWindowTheme(state.preferences.theme);
+  elements.themeSelect.value = state.preferences.theme;
+  syncThemeSelectShell();
+}
+
+function applyReaderPreferences({ syncControls = true } = {}) {
   document.body.dataset.sidebar = state.preferences.sidebarOpen ? "open" : "closed";
   document.documentElement.style.setProperty("--reader-font-size", `${state.preferences.fontSize}px`);
   document.documentElement.style.setProperty("--reader-width", `${state.preferences.readerWidth}%`);
-  document.documentElement.style.setProperty("--sidebar-width", `${getEffectiveSidebarWidth()}px`);
 
-  elements.themeSelect.value = state.preferences.theme;
-  elements.fontSizeInput.value = String(state.preferences.fontSize);
-  elements.readerWidthInput.value = String(state.preferences.readerWidth);
+  if (syncControls) {
+    elements.fontSizeInput.value = String(state.preferences.fontSize);
+    elements.readerWidthInput.value = String(state.preferences.readerWidth);
+    syncAllRangeControls();
+  }
+}
+
+function applyPathDisplayPreferences() {
   for (const button of [elements.pathDisplayPrivateButton, elements.pathDisplayFullButton]) {
     if (!button) {
       continue;
@@ -392,10 +401,14 @@ function applyPreferences() {
     button.dataset.selected = String(isSelected);
     button.setAttribute("aria-pressed", String(isSelected));
   }
-  syncThemeSelectShell();
-  syncAllRangeControls();
+
   setSourceInfo();
   updateBlockedResourceNotes();
+  syncAuditPanel();
+}
+
+function applySidebarPreferences() {
+  document.documentElement.style.setProperty("--sidebar-width", `${getEffectiveSidebarWidth()}px`);
   elements.toggleSidebarButton.setAttribute("aria-pressed", String(state.preferences.sidebarOpen));
   elements.toggleSidebarButton.setAttribute(
     "aria-label",
@@ -408,7 +421,13 @@ function applyPreferences() {
   elements.sidebarResizeHandle.setAttribute("aria-valuemin", String(MIN_SIDEBAR_WIDTH));
   elements.sidebarResizeHandle.setAttribute("aria-valuemax", String(getSidebarWidthBounds().max));
   elements.sidebarResizeHandle.setAttribute("aria-valuenow", String(getEffectiveSidebarWidth()));
-  syncAuditPanel();
+}
+
+function applyPreferences() {
+  applyThemePreferences();
+  applyReaderPreferences();
+  applyPathDisplayPreferences();
+  applySidebarPreferences();
 }
 
 function getSidebarWidthBounds() {
@@ -426,7 +445,7 @@ function getEffectiveSidebarWidth() {
 
 function updateSidebarWidth(width, { persist = true } = {}) {
   state.preferences.sidebarWidth = normalizeSidebarWidth(width);
-  applyPreferences();
+  applySidebarPreferences();
 
   if (persist) {
     savePreferences();
@@ -1404,7 +1423,8 @@ function toggleSidebar(forceOpen) {
     clearSidebarResizeSession();
   }
 
-  applyPreferences();
+  applyReaderPreferences({ syncControls: false });
+  applySidebarPreferences();
   savePreferences();
 }
 
@@ -1638,7 +1658,7 @@ function bindEvents() {
 
   elements.themeSelect.addEventListener("change", (event) => {
     state.preferences.theme = event.target.value;
-    applyPreferences();
+    applyThemePreferences();
     savePreferences();
   });
 
@@ -1698,7 +1718,7 @@ function bindEvents() {
     state.preferences.fontSize = Number(event.target.value);
     setRangeBubbleActive(elements.fontSizeInput, true);
     syncRangeControl(elements.fontSizeInput, elements.fontSizeValue);
-    applyPreferences();
+    applyReaderPreferences({ syncControls: false });
     schedulePreferenceSave();
     setRangeBubbleActive(elements.fontSizeInput, false, RANGE_BUBBLE_IDLE_DELAY_MS);
   });
@@ -1707,7 +1727,7 @@ function bindEvents() {
     state.preferences.readerWidth = Number(event.target.value);
     setRangeBubbleActive(elements.readerWidthInput, true);
     syncRangeControl(elements.readerWidthInput, elements.readerWidthValue);
-    applyPreferences();
+    applyReaderPreferences({ syncControls: false });
     schedulePreferenceSave();
     setRangeBubbleActive(elements.readerWidthInput, false, RANGE_BUBBLE_IDLE_DELAY_MS);
   });
@@ -1726,7 +1746,7 @@ function bindEvents() {
     }
 
     state.preferences.pathDisplayMode = nextValue;
-    applyPreferences();
+    applyPathDisplayPreferences();
     savePreferences();
   });
 
@@ -1909,7 +1929,7 @@ window.addEventListener("resize", () => {
     clearSidebarResizeSession();
   }
 
-  applyPreferences();
+  applySidebarPreferences();
   updateReaderScrollState();
 });
 
