@@ -23,6 +23,7 @@ const state = {
   preferences: loadPreferences(),
   sidebarResizeSession: null,
   rangeBubbleTimeouts: new Map(),
+  preferenceSaveTimer: null,
   entryMetadataHydrationTimer: null,
   pendingEntryMetadataPaths: new Set(),
   preferenceSaveCount: 0,
@@ -135,8 +136,32 @@ function loadPreferences() {
 }
 
 function savePreferences() {
+  if (state.preferenceSaveTimer) {
+    window.clearTimeout(state.preferenceSaveTimer);
+    state.preferenceSaveTimer = null;
+  }
+
   state.preferenceSaveCount += 1;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.preferences));
+}
+
+function schedulePreferenceSave(delay = 180) {
+  if (state.preferenceSaveTimer) {
+    window.clearTimeout(state.preferenceSaveTimer);
+  }
+
+  state.preferenceSaveTimer = window.setTimeout(() => {
+    state.preferenceSaveTimer = null;
+    savePreferences();
+  }, delay);
+}
+
+function flushScheduledPreferenceSave() {
+  if (!state.preferenceSaveTimer) {
+    return;
+  }
+
+  savePreferences();
 }
 
 function getThemeOptionButtons() {
@@ -1674,7 +1699,7 @@ function bindEvents() {
     setRangeBubbleActive(elements.fontSizeInput, true);
     syncRangeControl(elements.fontSizeInput, elements.fontSizeValue);
     applyPreferences();
-    savePreferences();
+    schedulePreferenceSave();
     setRangeBubbleActive(elements.fontSizeInput, false, RANGE_BUBBLE_IDLE_DELAY_MS);
   });
 
@@ -1683,7 +1708,7 @@ function bindEvents() {
     setRangeBubbleActive(elements.readerWidthInput, true);
     syncRangeControl(elements.readerWidthInput, elements.readerWidthValue);
     applyPreferences();
-    savePreferences();
+    schedulePreferenceSave();
     setRangeBubbleActive(elements.readerWidthInput, false, RANGE_BUBBLE_IDLE_DELAY_MS);
   });
 
@@ -1715,14 +1740,17 @@ function bindEvents() {
     });
 
     input.addEventListener("pointerup", () => {
+      flushScheduledPreferenceSave();
       setRangeBubbleActive(input, false, RANGE_BUBBLE_IDLE_DELAY_MS);
     });
 
     input.addEventListener("pointercancel", () => {
+      flushScheduledPreferenceSave();
       setRangeBubbleActive(input, false, RANGE_BUBBLE_IDLE_DELAY_MS);
     });
 
     input.addEventListener("blur", () => {
+      flushScheduledPreferenceSave();
       setRangeBubbleActive(input, false, 180);
     });
   }
