@@ -1226,47 +1226,53 @@ function getVisibleEntries() {
   return state.entries.filter((entry) => entry.relativePath.toLowerCase().includes(filterValue));
 }
 
+function createFileRow(entry) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "file-row";
+  button.dataset.path = entry.absolutePath;
+  button.dataset.active = String(entry.absolutePath === state.currentPath);
+  const entryMeta = formatEntryMeta(entry);
+
+  const name = document.createElement("span");
+  name.className = "file-row-name";
+  name.textContent = entry.name;
+  button.append(name);
+
+  const relativePath = document.createElement("span");
+  relativePath.className = "file-row-path";
+  relativePath.textContent = entry.relativePath;
+  button.append(relativePath);
+
+  if (entryMeta) {
+    const meta = document.createElement("span");
+    meta.className = "file-row-meta";
+    meta.textContent = entryMeta;
+    button.append(meta);
+  }
+
+  return button;
+}
+
 function renderFileList() {
   const visibleEntries = getVisibleEntries();
-  elements.fileList.innerHTML = "";
 
   if (visibleEntries.length === 0) {
     const empty = document.createElement("div");
     empty.className = "file-list-empty";
     empty.textContent = state.entries.length === 0 ? "No files loaded yet." : "No files match the current filter.";
-    elements.fileList.append(empty);
+    elements.fileList.replaceChildren(empty);
     clearEntryMetadataHydrationTimer();
     return;
   }
 
+  const fragment = document.createDocumentFragment();
+
   for (const entry of visibleEntries) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "file-row";
-    button.dataset.path = entry.absolutePath;
-    button.dataset.active = String(entry.absolutePath === state.currentPath);
-    const entryMeta = formatEntryMeta(entry);
-
-    const name = document.createElement("span");
-    name.className = "file-row-name";
-    name.textContent = entry.name;
-    button.append(name);
-
-    const relativePath = document.createElement("span");
-    relativePath.className = "file-row-path";
-    relativePath.textContent = entry.relativePath;
-    button.append(relativePath);
-
-    if (entryMeta) {
-      const meta = document.createElement("span");
-      meta.className = "file-row-meta";
-      meta.textContent = entryMeta;
-      button.append(meta);
-    }
-
-    elements.fileList.append(button);
+    fragment.append(createFileRow(entry));
   }
 
+  elements.fileList.replaceChildren(fragment);
   scheduleVisibleEntryMetadataHydration();
 }
 
