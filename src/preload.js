@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("mdViewer", {
   openAuditDemoTarget: (action) => ipcRenderer.invoke("audit:open-target", action),
   getAuditDemoPaths: () => ipcRenderer.invoke("audit:get-paths"),
   inspectPath: (targetPath) => ipcRenderer.invoke("path:inspect", targetPath),
+  getEntryMetadataBatch: (filePaths) => ipcRenderer.invoke("file:get-entry-metadata-batch", filePaths),
   readMarkdownFile: (filePath) => ipcRenderer.invoke("file:read-markdown", filePath),
   renderMarkdown: (markdown, currentFilePath, rootPath) =>
     ipcRenderer.invoke("markdown:render", markdown, currentFilePath, rootPath),

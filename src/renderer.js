@@ -5,6 +5,8 @@ const MIN_SIDEBAR_WIDTH = 300;
 const MAX_SIDEBAR_WIDTH = 560;
 const RANGE_BUBBLE_IDLE_DELAY_MS = 1400;
 const LINK_PREVIEW_OFFSET_PX = 18;
+const SIDEBAR_METADATA_PREFETCH_MARGIN_PX = 180;
+const SIDEBAR_METADATA_BATCH_LIMIT = 48;
 const SIDEBAR_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
@@ -21,6 +23,8 @@ const state = {
   preferences: loadPreferences(),
   sidebarResizeSession: null,
   rangeBubbleTimeouts: new Map(),
+  entryMetadataHydrationTimer: null,
+  pendingEntryMetadataPaths: new Set(),
   preferenceSaveCount: 0,
   auditDemo: {
     workspacePath: null,
@@ -961,6 +965,102 @@ function upsertEntry(entryUpdate) {
   state.entries = state.entries.map((entry, index) => (index === entryIndex ? { ...entry, ...entryUpdate } : entry));
 }
 
+function clearEntryMetadataHydrationTimer() {
+  if (state.entryMetadataHydrationTimer) {
+    window.clearTimeout(state.entryMetadataHydrationTimer);
+    state.entryMetadataHydrationTimer = null;
+  }
+}
+
+function getVisibleEntryButtons() {
+  const buttons = Array.from(elements.fileList?.querySelectorAll(".file-row") ?? []);
+
+  if (!elements.fileList || buttons.length === 0) {
+    return [];
+  }
+
+  const containerRect = elements.fileList.getBoundingClientRect();
+  const visibleButtons = buttons.filter((button) => {
+    const rect = button.getBoundingClientRect();
+    return (
+      rect.bottom >= containerRect.top - SIDEBAR_METADATA_PREFETCH_MARGIN_PX &&
+      rect.top <= containerRect.bottom + SIDEBAR_METADATA_PREFETCH_MARGIN_PX
+    );
+  });
+
+  return (visibleButtons.length > 0 ? visibleButtons : buttons).slice(0, SIDEBAR_METADATA_BATCH_LIMIT);
+}
+
+async function hydrateVisibleEntryMetadata() {
+  state.entryMetadataHydrationTimer = null;
+
+  if (state.sourceKind !== "folder" || state.entries.length === 0) {
+    return;
+  }
+
+  const pathsToHydrate = getVisibleEntryButtons()
+    .map((button) => button.dataset.path)
+    .filter(Boolean)
+    .filter((absolutePath) => {
+      if (state.pendingEntryMetadataPaths.has(absolutePath)) {
+        return false;
+      }
+
+      const entry = state.entries.find((candidate) => candidate.absolutePath === absolutePath);
+      return Boolean(entry) && (entry.modifiedAt == null || !Number.isFinite(entry.sizeBytes));
+    });
+
+  if (pathsToHydrate.length === 0) {
+    return;
+  }
+
+  for (const absolutePath of pathsToHydrate) {
+    state.pendingEntryMetadataPaths.add(absolutePath);
+  }
+
+  try {
+    const metadataEntries = await getBridge().getEntryMetadataBatch(pathsToHydrate);
+    let didUpdateEntries = false;
+
+    for (const metadataEntry of metadataEntries) {
+      const existingEntry = state.entries.find((entry) => entry.absolutePath === metadataEntry.absolutePath);
+
+      if (!existingEntry) {
+        continue;
+      }
+
+      if (existingEntry.modifiedAt === metadataEntry.modifiedAt && existingEntry.sizeBytes === metadataEntry.sizeBytes) {
+        continue;
+      }
+
+      upsertEntry(metadataEntry);
+      didUpdateEntries = true;
+    }
+
+    if (didUpdateEntries) {
+      renderFileList();
+    }
+  } catch (error) {
+    console.warn("[renderer] Unable to hydrate sidebar metadata:", error);
+  } finally {
+    for (const absolutePath of pathsToHydrate) {
+      state.pendingEntryMetadataPaths.delete(absolutePath);
+    }
+  }
+}
+
+function scheduleVisibleEntryMetadataHydration() {
+  clearEntryMetadataHydrationTimer();
+
+  if (state.sourceKind !== "folder") {
+    return;
+  }
+
+  state.entryMetadataHydrationTimer = window.setTimeout(() => {
+    void hydrateVisibleEntryMetadata();
+  }, 40);
+}
+
 function formatLinkPreviewKind(kind) {
   switch (kind) {
     case "website":
@@ -1091,6 +1191,7 @@ function renderFileList() {
     empty.className = "file-list-empty";
     empty.textContent = state.entries.length === 0 ? "No files loaded yet." : "No files match the current filter.";
     elements.fileList.append(empty);
+    clearEntryMetadataHydrationTimer();
     return;
   }
 
@@ -1121,6 +1222,8 @@ function renderFileList() {
 
     elements.fileList.append(button);
   }
+
+  scheduleVisibleEntryMetadataHydration();
 }
 
 async function openMarkdownFile(filePath) {
@@ -1189,6 +1292,8 @@ async function loadTarget(target) {
     return;
   }
 
+  clearEntryMetadataHydrationTimer();
+  state.pendingEntryMetadataPaths.clear();
   state.sourceKind = target.kind;
   state.rootPath = target.rootPath;
   state.entries = target.entries;
@@ -1212,6 +1317,8 @@ async function refreshEntriesFromDisk() {
   const refreshedTarget = await getBridge().inspectPath(state.rootPath);
 
   if (refreshedTarget?.error) {
+    clearEntryMetadataHydrationTimer();
+    state.pendingEntryMetadataPaths.clear();
     state.entries = [];
     setSourceInfo();
     resetDocumentState();
@@ -1219,6 +1326,8 @@ async function refreshEntriesFromDisk() {
     return;
   }
 
+  clearEntryMetadataHydrationTimer();
+  state.pendingEntryMetadataPaths.clear();
   state.entries = refreshedTarget.entries;
   setSourceInfo();
   renderFileList();
@@ -1478,6 +1587,9 @@ function bindEvents() {
     }
 
     void openMarkdownFile(fileButton.dataset.path);
+  });
+  elements.fileList.addEventListener("scroll", () => {
+    scheduleVisibleEntryMetadataHydration();
   });
 
   elements.filterInput.addEventListener("input", (event) => {

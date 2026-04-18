@@ -26,7 +26,7 @@ const WATCH_DEBOUNCE_MS = 220;
 const AUDIT_DEMO_WORKSPACE_NAME = "md-viewer-audit-demos";
 const AUDIT_DEMO_BENCHMARK_DIRECTORIES = 24;
 const AUDIT_DEMO_BENCHMARK_FILES_PER_DIRECTORY = 40;
-const INDEX_STAT_BATCH_SIZE = 64;
+const ENTRY_METADATA_BATCH_SIZE = 32;
 const AUDIT_DEMO_LARGE_DOCUMENT_SECTIONS = 1800;
 
 let mainWindow = null;
@@ -650,6 +650,16 @@ async function createMarkdownEntry(absolutePath, basePath, stats) {
   };
 }
 
+function createFolderIndexEntry(absolutePath, basePath) {
+  return {
+    name: path.basename(absolutePath),
+    absolutePath,
+    relativePath: normalizeSlashes(path.relative(basePath, absolutePath)),
+    modifiedAt: null,
+    sizeBytes: null
+  };
+}
+
 async function mapInBatches(items, batchSize, mapper) {
   const results = [];
 
@@ -698,11 +708,7 @@ async function collectMarkdownPaths(rootPath, results = []) {
 
 async function collectMarkdownFiles(rootPath) {
   const absolutePaths = await collectMarkdownPaths(rootPath);
-  const entries = await mapInBatches(
-    absolutePaths,
-    INDEX_STAT_BATCH_SIZE,
-    async (absolutePath) => createMarkdownEntry(absolutePath, rootPath)
-  );
+  const entries = absolutePaths.map((absolutePath) => createFolderIndexEntry(absolutePath, rootPath));
 
   entries.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
   return entries;
@@ -832,6 +838,50 @@ async function readMarkdownFile(filePath) {
     modifiedAt: getModifiedAt(stats),
     sizeBytes: getFileSize(stats)
   };
+}
+
+async function readMarkdownEntryMetadata(filePath) {
+  const absolutePath = path.resolve(filePath);
+
+  if (!isPathInsideApprovedRoot(absolutePath)) {
+    throw new Error("Blocked: metadata requests must stay inside the current approved folder.");
+  }
+
+  if (!isMarkdownFile(absolutePath)) {
+    throw new Error("Only Markdown files can be inspected.");
+  }
+
+  const stats = await fsp.stat(absolutePath);
+
+  if (!stats.isFile()) {
+    throw new Error(`Unsupported file type: ${absolutePath}`);
+  }
+
+  return {
+    absolutePath,
+    modifiedAt: getModifiedAt(stats),
+    sizeBytes: getFileSize(stats)
+  };
+}
+
+async function readMarkdownEntryMetadataBatch(filePaths) {
+  if (!Array.isArray(filePaths)) {
+    throw new Error("A metadata path array is required.");
+  }
+
+  const absolutePaths = Array.from(
+    new Set(
+      filePaths
+        .filter((filePath) => typeof filePath === "string" && filePath.trim())
+        .map((filePath) => path.resolve(filePath.trim()))
+    )
+  );
+
+  return mapInBatches(
+    absolutePaths,
+    ENTRY_METADATA_BATCH_SIZE,
+    (absolutePath) => readMarkdownEntryMetadata(absolutePath)
+  );
 }
 
 function clearWatchTimer() {
@@ -1210,6 +1260,7 @@ ipcMain.handle("dialog:open-folder", async () =>
 );
 
 ipcMain.handle("path:inspect", async (_event, targetPath) => inspectRendererTarget(targetPath));
+ipcMain.handle("file:get-entry-metadata-batch", async (_event, filePaths) => readMarkdownEntryMetadataBatch(filePaths));
 ipcMain.handle("file:read-markdown", async (_event, filePath) => readMarkdownFile(filePath));
 ipcMain.handle("markdown:render", async (_event, markdown, currentFilePath, rootPath) =>
   renderMarkdown(
