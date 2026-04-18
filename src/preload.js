@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("mdViewer", {
   chooseFile: () => ipcRenderer.invoke("dialog:open-file"),
   chooseFolder: () => ipcRenderer.invoke("dialog:open-folder"),
+  openAuditDemos: () => ipcRenderer.invoke("audit:open"),
+  getAuditDemoPaths: () => ipcRenderer.invoke("audit:get-paths"),
   inspectPath: (targetPath) => ipcRenderer.invoke("path:inspect", targetPath),
   readMarkdownFile: (filePath) => ipcRenderer.invoke("file:read-markdown", filePath),
   renderMarkdown: (markdown, currentFilePath, rootPath) =>

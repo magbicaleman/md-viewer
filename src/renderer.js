@@ -20,7 +20,13 @@ const state = {
   filterText: "",
   preferences: loadPreferences(),
   sidebarResizeSession: null,
-  rangeBubbleTimeouts: new Map()
+  rangeBubbleTimeouts: new Map(),
+  preferenceSaveCount: 0,
+  auditDemo: {
+    workspacePath: null,
+    paths: null,
+    results: []
+  }
 };
 
 function normalizeReaderWidth(value) {
@@ -55,6 +61,7 @@ function normalizeSidebarWidth(value) {
 const elements = {
   openFileButton: document.querySelector("#openFileButton"),
   openFolderButton: document.querySelector("#openFolderButton"),
+  openAuditDemosButton: document.querySelector("#openAuditDemosButton"),
   toggleSidebarButton: document.querySelector("#toggleSidebarButton"),
   toggleAdvancedButton: document.querySelector("#toggleAdvancedButton"),
   sidebarResizeHandle: document.querySelector("#sidebarResizeHandle"),
@@ -79,6 +86,14 @@ const elements = {
   linkPreviewHint: document.querySelector("#linkPreviewHint"),
   emptyState: document.querySelector("#emptyState"),
   statusBanner: document.querySelector("#statusBanner"),
+  auditPanel: document.querySelector("#auditPanel"),
+  auditPanelSummary: document.querySelector("#auditPanelSummary"),
+  auditSymlinkButton: document.querySelector("#auditSymlinkButton"),
+  auditBridgeButton: document.querySelector("#auditBridgeButton"),
+  auditFolderPerfButton: document.querySelector("#auditFolderPerfButton"),
+  auditLargeDocButton: document.querySelector("#auditLargeDocButton"),
+  auditUiStressButton: document.querySelector("#auditUiStressButton"),
+  auditResults: document.querySelector("#auditResults"),
   toggleSettingsButton: document.querySelector("#toggleSettingsButton"),
   settingsPanel: document.querySelector("#settingsPanel"),
   pathDisplayControl: document.querySelector("#pathDisplayControl"),
@@ -118,6 +133,7 @@ function loadPreferences() {
 }
 
 function savePreferences() {
+  state.preferenceSaveCount += 1;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.preferences));
 }
 
@@ -365,6 +381,7 @@ function applyPreferences() {
   elements.sidebarResizeHandle.setAttribute("aria-valuemin", String(MIN_SIDEBAR_WIDTH));
   elements.sidebarResizeHandle.setAttribute("aria-valuemax", String(getSidebarWidthBounds().max));
   elements.sidebarResizeHandle.setAttribute("aria-valuenow", String(getEffectiveSidebarWidth()));
+  syncAuditPanel();
 }
 
 function getSidebarWidthBounds() {
@@ -490,6 +507,252 @@ function getBridge() {
   return window.mdViewer;
 }
 
+function isPathWithin(rootPath, targetPath) {
+  if (!rootPath || !targetPath) {
+    return false;
+  }
+
+  const normalizedRoot = normalizeEntryPath(rootPath).replace(/\/$/, "");
+  const normalizedTarget = normalizeEntryPath(targetPath);
+
+  return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(`${normalizedRoot}/`);
+}
+
+function formatDurationMs(durationMs) {
+  return `${durationMs.toFixed(durationMs >= 100 ? 0 : 1)} ms`;
+}
+
+function setAuditDemoPaths(paths) {
+  if (!paths?.workspacePath) {
+    return;
+  }
+
+  state.auditDemo.workspacePath = paths.workspacePath;
+  state.auditDemo.paths = paths;
+}
+
+function isAuditDemoActive() {
+  const workspacePath = state.auditDemo.workspacePath;
+
+  return isPathWithin(workspacePath, state.rootPath) || isPathWithin(workspacePath, state.currentPath);
+}
+
+function renderAuditResults() {
+  if (!elements.auditResults) {
+    return;
+  }
+
+  elements.auditResults.innerHTML = "";
+
+  for (const result of state.auditDemo.results) {
+    const card = document.createElement("article");
+    card.className = "audit-result";
+    card.dataset.kind = result.kind ?? "info";
+
+    const title = document.createElement("p");
+    title.className = "audit-result-title";
+    title.textContent = result.title;
+    card.append(title);
+
+    const body = document.createElement("p");
+    body.className = "audit-result-body";
+    body.textContent = result.body;
+    card.append(body);
+
+    elements.auditResults.append(card);
+  }
+}
+
+function addAuditResult(title, body, kind = "info") {
+  state.auditDemo.results = [{ title, body, kind }, ...state.auditDemo.results].slice(0, 6);
+  renderAuditResults();
+}
+
+function syncAuditPanel() {
+  const active = isAuditDemoActive();
+
+  if (!elements.auditPanel || !elements.auditPanelSummary) {
+    return;
+  }
+
+  elements.auditPanel.hidden = !active;
+
+  if (!active) {
+    return;
+  }
+
+  const currentPath = state.currentPath ? normalizeEntryPath(state.currentPath) : "";
+
+  if (currentPath.endsWith("/01-symlink-escape/inside/open-me.md")) {
+    elements.auditPanelSummary.textContent =
+      "Click the escape link in the document, or rerun the Symlink Escape button. The correct behavior is that the app blocks it because the real destination lives outside the opened folder.";
+    return;
+  }
+
+  if (currentPath.endsWith("/02-renderer-authority/inside/open-me.md")) {
+    elements.auditPanelSummary.textContent =
+      "Bridge Escape simulates a compromised renderer calling the preload bridge directly and reading paths outside the folder the user opened.";
+    return;
+  }
+
+  if (currentPath.endsWith("/04-large-document/large.md")) {
+    elements.auditPanelSummary.textContent =
+      "Large Document measures full-file read plus markdown parse time before the content is pushed into the DOM.";
+    return;
+  }
+
+  if (state.rootPath && state.auditDemo.paths?.folderBenchmark?.rootPath === state.rootPath) {
+    elements.auditPanelSummary.textContent =
+      "Folder Scan and UI Stress are most meaningful here because the sidebar is holding the generated large index.";
+    return;
+  }
+
+  elements.auditPanelSummary.textContent =
+    "Use these buttons to jump to each repro and see the effect in the running app instead of reading it as a static review note.";
+}
+
+async function openAuditDemoWorkspace() {
+  const { target, paths } = await getBridge().openAuditDemos();
+  setAuditDemoPaths(paths);
+  state.auditDemo.results = [];
+  renderAuditResults();
+  await loadTarget(target);
+  addAuditResult(
+    "Audit demos ready",
+    `Generated a temporary demo workspace at ${paths.workspacePath}. Use the panel buttons to run each repro inside the app.`,
+    "success"
+  );
+}
+
+async function openAuditSymlinkDemo() {
+  const paths = state.auditDemo.paths ?? await getBridge().getAuditDemoPaths();
+  setAuditDemoPaths(paths);
+
+  const target = await getBridge().inspectPath(paths.symlinkDemo.startFile);
+  await loadTarget(target);
+  addAuditResult(
+    "Symlink escape",
+    "The document now links to a symlink inside the opened folder. Click the escape link in the note. The correct behavior is that the app blocks it because the real destination lives outside the opened folder.",
+    "success"
+  );
+}
+
+async function runAuditBridgeEscapeDemo() {
+  const paths = state.auditDemo.paths ?? await getBridge().getAuditDemoPaths();
+  setAuditDemoPaths(paths);
+
+  const insideTarget = await getBridge().inspectPath(paths.authorityDemo.startFile);
+  await loadTarget(insideTarget);
+
+  const folderStart = performance.now();
+  const inspectedOutsideFolder = await getBridge().inspectPath(paths.authorityDemo.outsideFolder);
+  const folderEnd = performance.now();
+  const fileStart = performance.now();
+  const outsideFile = await getBridge().readMarkdownFile(paths.authorityDemo.outsideFile);
+  const fileEnd = performance.now();
+
+  addAuditResult(
+    "Bridge escape",
+    [
+      "This button simulates a malicious script already running in the renderer.",
+      `Outside folder inspect: ${inspectedOutsideFolder?.kind ?? "error"} in ${formatDurationMs(folderEnd - folderStart)}.`,
+      `Outside markdown read: ${outsideFile.name} (${formatFileSize(outsideFile.sizeBytes) || "unknown size"}) in ${formatDurationMs(fileEnd - fileStart)}.`,
+      "Both succeeded even though the visible root for the demo is the inside folder only."
+    ].join("\n"),
+    "warning"
+  );
+}
+
+async function runAuditFolderBenchmark() {
+  const paths = state.auditDemo.paths ?? await getBridge().getAuditDemoPaths();
+  setAuditDemoPaths(paths);
+
+  const inspectStart = performance.now();
+  const target = await getBridge().inspectPath(paths.folderBenchmark.rootPath);
+  const inspectEnd = performance.now();
+  const loadStart = performance.now();
+  await loadTarget(target);
+  const loadEnd = performance.now();
+
+  addAuditResult(
+    "Folder scan benchmark",
+    [
+      `Indexed ${target.entries.length} markdown files.`,
+      `Main-process scan via inspectPath(): ${formatDurationMs(inspectEnd - inspectStart)}.`,
+      `Total load into sidebar + first document open: ${formatDurationMs(loadEnd - loadStart)}.`,
+      "This cost currently runs on the main process."
+    ].join("\n"),
+    "warning"
+  );
+}
+
+async function runAuditLargeDocumentDemo() {
+  const paths = state.auditDemo.paths ?? await getBridge().getAuditDemoPaths();
+  setAuditDemoPaths(paths);
+
+  const readStart = performance.now();
+  const file = await getBridge().readMarkdownFile(paths.largeDocument.filePath);
+  const readEnd = performance.now();
+  const renderStart = performance.now();
+  const html = await getBridge().renderMarkdown(file.content, file.absolutePath, paths.largeDocument.rootPath);
+  const renderEnd = performance.now();
+
+  await loadTarget(await getBridge().inspectPath(paths.largeDocument.filePath));
+
+  addAuditResult(
+    "Large document benchmark",
+    [
+      `Read ${formatFileSize(file.sizeBytes) || `${file.content.length} chars`} in ${formatDurationMs(readEnd - readStart)}.`,
+      `Markdown render produced ${formatFileSize(html.length) || `${html.length} chars`} in ${formatDurationMs(renderEnd - renderStart)}.`,
+      "The file is fully read and parsed before the renderer receives the HTML."
+    ].join("\n"),
+    "warning"
+  );
+}
+
+async function runAuditUiStressDemo() {
+  const paths = state.auditDemo.paths ?? await getBridge().getAuditDemoPaths();
+  setAuditDemoPaths(paths);
+
+  if (state.rootPath !== paths.folderBenchmark.rootPath) {
+    await runAuditFolderBenchmark();
+  }
+
+  const originalPreferences = { ...state.preferences };
+  const startSaves = state.preferenceSaveCount;
+  const sliderStart = performance.now();
+
+  for (let step = 0; step < 28; step += 1) {
+    const nextValue = 55 + (step % 46);
+    elements.readerWidthInput.value = String(nextValue);
+    elements.readerWidthInput.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  const sliderEnd = performance.now();
+
+  const renderStart = performance.now();
+  renderFileList();
+  renderFileList();
+  const renderEnd = performance.now();
+
+  state.preferences = originalPreferences;
+  applyPreferences();
+  savePreferences();
+
+  const preferenceWrites = Math.max(0, state.preferenceSaveCount - startSaves - 1);
+
+  addAuditResult(
+    "UI stress",
+    [
+      `Programmatic slider drag: ${formatDurationMs(sliderEnd - sliderStart)}.`,
+      `Synchronous preference saves triggered during the drag: ${preferenceWrites}.`,
+      `Two full sidebar rerenders on the large index: ${formatDurationMs(renderEnd - renderStart)}.`,
+      "This showcases the current synchronous localStorage writes and full-list rerender strategy."
+    ].join("\n"),
+    "warning"
+  );
+}
+
 function setSourceInfo() {
   elements.rootLabel.textContent = formatRootPath(state.rootPath);
   elements.fileCount.textContent = `${state.entries.length} file${state.entries.length === 1 ? "" : "s"}`;
@@ -511,6 +774,7 @@ function resetDocumentState() {
   elements.markdownContent.innerHTML = "";
   updateEmptyState();
   renderFileList();
+  syncAuditPanel();
   void getBridge().clearWatchContext().catch((error) => {
     reportBackgroundError(error, "Unable to clear the auto-refresh watcher.");
   });
@@ -837,6 +1101,7 @@ async function openMarkdownFile(filePath) {
     updateBlockedResourceNotes();
     updateEmptyState();
     renderFileList();
+    syncAuditPanel();
     showStatus("");
     await bridge.setWatchContext({
       currentPath: state.currentPath,
@@ -889,6 +1154,7 @@ async function loadTarget(target) {
   setSourceInfo();
   updateEmptyState();
   renderFileList();
+  syncAuditPanel();
   requestAnimationFrame(updateReaderScrollState);
 
   if (target.currentPath) {
@@ -1164,6 +1430,16 @@ function bindEvents() {
     }
   });
 
+  elements.openAuditDemosButton.addEventListener("click", async () => {
+    try {
+      showStatus("Preparing audit demos…");
+      await openAuditDemoWorkspace();
+      showStatus("");
+    } catch (error) {
+      reportError(error, "Unable to prepare the audit demo workspace.");
+    }
+  });
+
   elements.toggleAdvancedButton.addEventListener("click", () => {
     toggleAdvancedPanel();
   });
@@ -1328,6 +1604,36 @@ function bindEvents() {
       setRangeBubbleActive(input, false, 180);
     });
   }
+
+  elements.auditSymlinkButton.addEventListener("click", () => {
+    void openAuditSymlinkDemo().catch((error) => {
+      reportError(error, "Unable to open the symlink escape demo.");
+    });
+  });
+
+  elements.auditBridgeButton.addEventListener("click", () => {
+    void runAuditBridgeEscapeDemo().catch((error) => {
+      reportError(error, "Unable to run the bridge escape demo.");
+    });
+  });
+
+  elements.auditFolderPerfButton.addEventListener("click", () => {
+    void runAuditFolderBenchmark().catch((error) => {
+      reportError(error, "Unable to run the folder scan benchmark.");
+    });
+  });
+
+  elements.auditLargeDocButton.addEventListener("click", () => {
+    void runAuditLargeDocumentDemo().catch((error) => {
+      reportError(error, "Unable to run the large document benchmark.");
+    });
+  });
+
+  elements.auditUiStressButton.addEventListener("click", () => {
+    void runAuditUiStressDemo().catch((error) => {
+      reportError(error, "Unable to run the UI stress demo.");
+    });
+  });
 
   elements.markdownContent.addEventListener("click", handleMarkdownClick);
   elements.markdownContent.addEventListener("pointerdown", (event) => {

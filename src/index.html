@@ -133,6 +133,28 @@
           </section>
 
           <div id="statusBanner" class="status-banner" hidden></div>
+
+          <section id="auditPanel" class="audit-panel" hidden>
+            <div class="audit-panel-header">
+              <div>
+                <p class="audit-panel-eyebrow">Audit Lab</p>
+                <h2 class="audit-panel-title">Reproduce the review findings.</h2>
+              </div>
+              <p id="auditPanelSummary" class="audit-panel-summary">
+                Open the generated demo workspace to run each security and performance repro inside the app.
+              </p>
+            </div>
+
+            <div class="audit-actions">
+              <button id="auditSymlinkButton" class="button button-outline" type="button">Symlink Escape</button>
+              <button id="auditBridgeButton" class="button button-outline" type="button">Bridge Escape</button>
+              <button id="auditFolderPerfButton" class="button button-outline" type="button">Folder Scan</button>
+              <button id="auditLargeDocButton" class="button button-outline" type="button">Large Document</button>
+              <button id="auditUiStressButton" class="button button-outline" type="button">UI Stress</button>
+            </div>
+
+            <div id="auditResults" class="audit-results" aria-live="polite"></div>
+          </section>
         </div>
 
         <div class="reader-shell-bottom">
@@ -185,6 +207,7 @@
           <div class="actions">
             <button id="openFileButton" class="button button-solid" type="button">Open File</button>
             <button id="openFolderButton" class="button button-muted" type="button">Open Folder</button>
+            <button id="openAuditDemosButton" class="button button-outline" type="button">Audit Demos</button>
           </div>
 
           <div class="advanced-panel">

@@ -23,6 +23,10 @@ const WINDOW_THEME_BACKGROUNDS = {
   graphite: "#171b20"
 };
 const WATCH_DEBOUNCE_MS = 220;
+const AUDIT_DEMO_WORKSPACE_NAME = "md-viewer-audit-demos";
+const AUDIT_DEMO_BENCHMARK_DIRECTORIES = 24;
+const AUDIT_DEMO_BENCHMARK_FILES_PER_DIRECTORY = 40;
+const AUDIT_DEMO_LARGE_DOCUMENT_SECTIONS = 1800;
 
 let mainWindow = null;
 let pendingOpenPath = null;
@@ -163,6 +167,286 @@ function getLocalFileSize(absolutePath) {
   }
 }
 
+function getRealPathSync(targetPath) {
+  try {
+    if (typeof fs.realpathSync.native === "function") {
+      return fs.realpathSync.native(targetPath);
+    }
+
+    return fs.realpathSync(targetPath);
+  } catch {
+    return null;
+  }
+}
+
+function resolveContainedLocalPath(targetPath, rootPath) {
+  const absoluteTargetPath = path.resolve(targetPath);
+
+  if (!rootPath) {
+    return {
+      absoluteTargetPath,
+      realTargetPath: getRealPathSync(absoluteTargetPath),
+      isAllowed: false
+    };
+  }
+
+  const absoluteRootPath = path.resolve(rootPath);
+  const realRootPath = getRealPathSync(absoluteRootPath) ?? absoluteRootPath;
+  const realTargetPath = getRealPathSync(absoluteTargetPath);
+
+  return {
+    absoluteTargetPath,
+    absoluteRootPath,
+    realRootPath,
+    realTargetPath,
+    isAllowed: Boolean(realTargetPath) && isWithinDirectory(realRootPath, realTargetPath)
+  };
+}
+
+function getAuditDemoPaths() {
+  const workspacePath = path.join(app.getPath("temp"), AUDIT_DEMO_WORKSPACE_NAME);
+
+  return {
+    workspacePath,
+    startFile: path.join(workspacePath, "00-start-here.md"),
+    symlinkDemo: {
+      rootPath: path.join(workspacePath, "01-symlink-escape", "inside"),
+      startFile: path.join(workspacePath, "01-symlink-escape", "inside", "open-me.md"),
+      escapeLinkPath: path.join(workspacePath, "01-symlink-escape", "inside", "escape.md"),
+      outsideFile: path.join(workspacePath, "01-symlink-escape", "outside", "secret.md")
+    },
+    authorityDemo: {
+      rootPath: path.join(workspacePath, "02-renderer-authority", "inside"),
+      startFile: path.join(workspacePath, "02-renderer-authority", "inside", "open-me.md"),
+      outsideFile: path.join(workspacePath, "02-renderer-authority", "outside", "secret.md"),
+      outsideFolder: path.join(workspacePath, "02-renderer-authority", "outside")
+    },
+    folderBenchmark: {
+      rootPath: path.join(workspacePath, "03-folder-index")
+    },
+    largeDocument: {
+      rootPath: path.join(workspacePath, "04-large-document"),
+      filePath: path.join(workspacePath, "04-large-document", "large.md")
+    }
+  };
+}
+
+async function writeDemoFile(filePath, content) {
+  await fsp.mkdir(path.dirname(filePath), { recursive: true });
+  await fsp.writeFile(filePath, content, "utf8");
+}
+
+async function createAuditDemoSymlink(linkPath, targetPath) {
+  try {
+    await fsp.lstat(linkPath);
+    await fsp.rm(linkPath, { force: true });
+  } catch {
+    // No existing path to remove.
+  }
+
+  try {
+    await fsp.symlink(targetPath, linkPath);
+    return { ok: true, mode: "symlink" };
+  } catch (error) {
+    await fsp.writeFile(
+      linkPath,
+      [
+        "# Symlink Demo Unavailable",
+        "",
+        "This platform or filesystem blocked symlink creation, so the breakout demo could not be reproduced exactly.",
+        "",
+        `Original target: ${targetPath}`,
+        `Creation error: ${error?.message ?? "Unknown error"}`
+      ].join("\n"),
+      "utf8"
+    );
+
+    return { ok: false, mode: "fallback", error: error?.message ?? "Unknown error" };
+  }
+}
+
+function buildLargeDocument() {
+  const sections = [];
+
+  for (let index = 0; index < AUDIT_DEMO_LARGE_DOCUMENT_SECTIONS; index += 1) {
+    sections.push(
+      [
+        `## Section ${index + 1}`,
+        "",
+        `This section exists to make the main-process markdown parse visibly expensive inside the audit lab. Reference [link ${index + 1}](https://example.com/${index + 1}).`,
+        "",
+        "- First point",
+        "- Second point",
+        "- Third point",
+        "",
+        "```txt",
+        `render payload ${index + 1}`,
+        "```",
+        ""
+      ].join("\n")
+    );
+  }
+
+  return [
+    "# Large Markdown Demo",
+    "",
+    "Use the audit panel button to measure file read and markdown render time against this generated document.",
+    "",
+    ...sections
+  ].join("\n");
+}
+
+async function ensureAuditDemoWorkspace() {
+  const demoPaths = getAuditDemoPaths();
+
+  try {
+    await fsp.access(demoPaths.startFile);
+    await fsp.access(demoPaths.largeDocument.filePath);
+    await fsp.access(path.join(demoPaths.folderBenchmark.rootPath, "bucket-24", "doc-040.md"));
+    return demoPaths;
+  } catch {
+    // Workspace is incomplete or missing, so regenerate it.
+  }
+
+  await writeDemoFile(
+    demoPaths.startFile,
+    [
+      "# MD Viewer Audit Demos",
+      "",
+      "This workspace turns each review finding into something you can trigger in the app.",
+      "",
+      "## Use The Audit Panel",
+      "",
+      "1. Keep this file open or click one of the audit buttons in the top panel.",
+      "2. Each button either navigates you to the right repro file or runs the demo directly.",
+      "3. The result cards explain what happened and why it matters.",
+      "",
+      "## Demo Map",
+      "",
+      "- Symlink escape: open the symlink demo and click the in-document escape link.",
+      "- Bridge escape: simulate a compromised renderer calling the preload bridge directly.",
+      "- Folder scan: open a generated folder with many markdown files and time the index walk.",
+      "- Large document: measure full-file read plus main-process markdown render.",
+      "- UI stress: hammer the current slider and sidebar code paths to show synchronous writes and rerenders.",
+      ""
+    ].join("\n")
+  );
+
+  await writeDemoFile(
+    demoPaths.symlinkDemo.startFile,
+    [
+      "# Symlink Escape Demo",
+      "",
+      "The opened root for this demo is the `inside/` folder only.",
+      "",
+      "The next link is a symlink that lives inside the opened folder, but its real destination lives outside that root.",
+      "",
+      "Open the [escape link](./escape.md).",
+      "",
+      "The correct behavior is that the app blocks it instead of following the symlink past the opened root.",
+      ""
+    ].join("\n")
+  );
+
+  await writeDemoFile(
+    demoPaths.symlinkDemo.outsideFile,
+    [
+      "# Outside The Opened Folder",
+      "",
+      "You should not be able to reach this file from the `inside/` demo root if local resource confinement is real-path safe.",
+      "",
+      "Seeing this content after clicking the escape link demonstrates the symlink breakout.",
+      ""
+    ].join("\n")
+  );
+
+  await createAuditDemoSymlink(demoPaths.symlinkDemo.escapeLinkPath, demoPaths.symlinkDemo.outsideFile);
+
+  await writeDemoFile(
+    demoPaths.authorityDemo.startFile,
+    [
+      "# Renderer Authority Demo",
+      "",
+      "This folder is the only root the user intended to open.",
+      "",
+      "The audit panel's Bridge Escape button simulates what would happen if a malicious script ever executed inside the renderer.",
+      "",
+      "That script does not need a visible file link. It can call the preload bridge directly and inspect or read paths outside this root.",
+      ""
+    ].join("\n")
+  );
+
+  await writeDemoFile(
+    demoPaths.authorityDemo.outsideFile,
+    [
+      "# Bridge Escape Target",
+      "",
+      "This file sits outside the `inside/` root for the renderer authority demo.",
+      "",
+      "If the audit panel can read this file while the app is scoped to the inside folder, the renderer still holds too much path authority.",
+      ""
+    ].join("\n")
+  );
+
+  await writeDemoFile(
+    path.join(demoPaths.folderBenchmark.rootPath, "README.md"),
+    [
+      "# Folder Scan Benchmark",
+      "",
+      "This folder contains many generated markdown files so the app has to recurse, stat, sort, and render a large sidebar index.",
+      "",
+      "Use the audit panel to measure how long `inspectPath()` plus the resulting UI load takes.",
+      ""
+    ].join("\n")
+  );
+
+  for (let directoryIndex = 0; directoryIndex < AUDIT_DEMO_BENCHMARK_DIRECTORIES; directoryIndex += 1) {
+    const directoryPath = path.join(
+      demoPaths.folderBenchmark.rootPath,
+      `bucket-${String(directoryIndex + 1).padStart(2, "0")}`
+    );
+
+    await fsp.mkdir(directoryPath, { recursive: true });
+
+    for (let fileIndex = 0; fileIndex < AUDIT_DEMO_BENCHMARK_FILES_PER_DIRECTORY; fileIndex += 1) {
+      const filePath = path.join(
+        directoryPath,
+        `doc-${String(fileIndex + 1).padStart(3, "0")}.md`
+      );
+
+      await fsp.writeFile(
+        filePath,
+        [
+          `# Demo Document ${directoryIndex + 1}-${fileIndex + 1}`,
+          "",
+          "This generated note exists so the folder benchmark can reproduce sidebar indexing cost.",
+          "",
+          `- Directory: ${directoryIndex + 1}`,
+          `- File: ${fileIndex + 1}`,
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+    }
+  }
+
+  await writeDemoFile(
+    path.join(demoPaths.largeDocument.rootPath, "README.md"),
+    [
+      "# Large Document Benchmark",
+      "",
+      "The generated `large.md` file is intentionally big enough to make full-buffer reads and markdown parsing noticeable.",
+      "",
+      "Use the audit panel to measure read and render time before the document is injected into the DOM.",
+      ""
+    ].join("\n")
+  );
+
+  await writeDemoFile(demoPaths.largeDocument.filePath, buildLargeDocument());
+
+  return demoPaths;
+}
+
 function buildLocalResource(absolutePath, currentFilePath, suffix = "") {
   const fileHref = pathToFileURL(absolutePath).toString();
 
@@ -224,11 +508,18 @@ function resolveResource(rawTarget, currentFilePath, rootPath) {
 
     if (url.protocol === "file:") {
       const localPath = fileURLToPath(url);
-      if (!rootPath || !isWithinDirectory(rootPath, localPath)) {
-        return buildBlockedResource(localPath, currentFilePath, rootPath, `${url.search}${url.hash}`);
+      const containment = resolveContainedLocalPath(localPath, rootPath);
+
+      if (!containment.isAllowed) {
+        return buildBlockedResource(
+          containment.realTargetPath ?? containment.absoluteTargetPath,
+          currentFilePath,
+          rootPath,
+          `${url.search}${url.hash}`
+        );
       }
 
-      return buildLocalResource(localPath, currentFilePath, `${url.search}${url.hash}`);
+      return buildLocalResource(containment.realTargetPath, currentFilePath, `${url.search}${url.hash}`);
     }
 
     return {
@@ -244,11 +535,18 @@ function resolveResource(rawTarget, currentFilePath, rootPath) {
   }
 
   const absolutePath = path.resolve(path.dirname(currentFilePath), pathname || ".");
-  if (!rootPath || !isWithinDirectory(rootPath, absolutePath)) {
-    return buildBlockedResource(absolutePath, currentFilePath, rootPath, suffix);
+  const containment = resolveContainedLocalPath(absolutePath, rootPath);
+
+  if (!containment.isAllowed) {
+    return buildBlockedResource(
+      containment.realTargetPath ?? containment.absoluteTargetPath,
+      currentFilePath,
+      rootPath,
+      suffix
+    );
   }
 
-  return buildLocalResource(absolutePath, currentFilePath, suffix);
+  return buildLocalResource(containment.realTargetPath, currentFilePath, suffix);
 }
 
 function buildMarkdownRenderer(currentFilePath, rootPath) {
@@ -755,6 +1053,16 @@ app.on("open-file", (event, filePath) => {
   event.preventDefault();
   void sendOpenedTarget(filePath);
 });
+
+ipcMain.handle("audit:open", async () => {
+  const demoPaths = await ensureAuditDemoWorkspace();
+  return {
+    target: await inspectTarget(demoPaths.startFile),
+    paths: demoPaths
+  };
+});
+
+ipcMain.handle("audit:get-paths", async () => ensureAuditDemoWorkspace());
 
 ipcMain.handle("dialog:open-file", async () =>
   showOpenPicker(
