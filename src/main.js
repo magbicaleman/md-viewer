@@ -26,6 +26,7 @@ const WATCH_DEBOUNCE_MS = 220;
 const AUDIT_DEMO_WORKSPACE_NAME = "md-viewer-audit-demos";
 const AUDIT_DEMO_BENCHMARK_DIRECTORIES = 24;
 const AUDIT_DEMO_BENCHMARK_FILES_PER_DIRECTORY = 40;
+const INDEX_STAT_BATCH_SIZE = 64;
 const AUDIT_DEMO_LARGE_DOCUMENT_SECTIONS = 1800;
 
 let mainWindow = null;
@@ -649,7 +650,18 @@ async function createMarkdownEntry(absolutePath, basePath, stats) {
   };
 }
 
-async function collectMarkdownFiles(rootPath, basePath = rootPath, results = []) {
+async function mapInBatches(items, batchSize, mapper) {
+  const results = [];
+
+  for (let index = 0; index < items.length; index += batchSize) {
+    const batch = items.slice(index, index + batchSize);
+    results.push(...await Promise.all(batch.map(mapper)));
+  }
+
+  return results;
+}
+
+async function collectMarkdownPaths(rootPath, results = []) {
   let entries;
 
   try {
@@ -672,18 +684,28 @@ async function collectMarkdownFiles(rootPath, basePath = rootPath, results = [])
         continue;
       }
 
-      await collectMarkdownFiles(absolutePath, basePath, results);
+      await collectMarkdownPaths(absolutePath, results);
       continue;
     }
 
-    if (!entry.isFile() || !isMarkdownFile(absolutePath)) {
-      continue;
+    if (entry.isFile() && isMarkdownFile(absolutePath)) {
+      results.push(absolutePath);
     }
-
-    results.push(await createMarkdownEntry(absolutePath, basePath));
   }
 
   return results;
+}
+
+async function collectMarkdownFiles(rootPath) {
+  const absolutePaths = await collectMarkdownPaths(rootPath);
+  const entries = await mapInBatches(
+    absolutePaths,
+    INDEX_STAT_BATCH_SIZE,
+    async (absolutePath) => createMarkdownEntry(absolutePath, rootPath)
+  );
+
+  entries.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  return entries;
 }
 
 async function inspectTarget(targetPath) {
