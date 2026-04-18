@@ -40,6 +40,9 @@ const watchState = {
   rootWatcher: null,
   debounceTimer: null
 };
+const accessState = {
+  approvedRootPath: null
+};
 
 process.on("uncaughtException", (error) => {
   console.error("[main] Uncaught exception:", error);
@@ -165,6 +168,14 @@ function getLocalFileSize(absolutePath) {
   } catch {
     return null;
   }
+}
+
+function setApprovedRootPath(rootPath) {
+  accessState.approvedRootPath = rootPath ? path.resolve(rootPath) : null;
+}
+
+function getApprovedRootPath() {
+  return accessState.approvedRootPath;
 }
 
 function getRealPathSync(targetPath) {
@@ -371,7 +382,7 @@ async function ensureAuditDemoWorkspace() {
       "",
       "The audit panel's Bridge Escape button simulates what would happen if a malicious script ever executed inside the renderer.",
       "",
-      "That script does not need a visible file link. It can call the preload bridge directly and inspect or read paths outside this root.",
+      "The correct behavior is that the app blocks path requests outside this root. Only explicit user actions like Open File or Open Folder should change scope.",
       ""
     ].join("\n")
   );
@@ -722,8 +733,64 @@ async function inspectTarget(targetPath) {
   };
 }
 
+function isPathInsideApprovedRoot(targetPath) {
+  const approvedRootPath = getApprovedRootPath();
+
+  if (!approvedRootPath) {
+    return false;
+  }
+
+  return resolveContainedLocalPath(targetPath, approvedRootPath).isAllowed;
+}
+
+async function inspectRendererTarget(targetPath) {
+  if (!targetPath || !targetPath.trim()) {
+    return { error: "Enter a file or folder path." };
+  }
+
+  const absoluteTargetPath = path.resolve(targetPath.trim());
+
+  if (!isPathInsideApprovedRoot(absoluteTargetPath)) {
+    return {
+      error: "Blocked: renderer requests must stay inside the current folder. Use Open File or Open Folder to change scope."
+    };
+  }
+
+  return inspectTarget(absoluteTargetPath);
+}
+
+async function openAuditDemoTarget(action) {
+  const demoPaths = await ensureAuditDemoWorkspace();
+  const targetByAction = {
+    symlink: demoPaths.symlinkDemo.startFile,
+    bridge: demoPaths.authorityDemo.startFile,
+    folder: demoPaths.folderBenchmark.rootPath,
+    large: demoPaths.largeDocument.filePath,
+    ui: demoPaths.folderBenchmark.rootPath
+  };
+  const targetPath = targetByAction[action];
+
+  if (!targetPath) {
+    return { error: "Unknown audit demo target." };
+  }
+
+  const target = await inspectTarget(targetPath);
+
+  if (!target?.error) {
+    setApprovedRootPath(target.rootPath);
+  }
+
+  return target;
+}
+
 async function readMarkdownFile(filePath) {
   const absolutePath = path.resolve(filePath);
+
+  if (!isPathInsideApprovedRoot(absolutePath)) {
+    throw new Error(
+      "Blocked: renderer file reads must stay inside the current approved folder. Open a new file or folder explicitly to change scope."
+    );
+  }
 
   if (!isMarkdownFile(absolutePath)) {
     throw new Error("Only Markdown files can be opened.");
@@ -825,6 +892,10 @@ async function validateWatchContext(context) {
 
   const currentPath = path.resolve(currentPathValue);
 
+  if (!isPathInsideApprovedRoot(currentPath)) {
+    throw new Error("Watch requests must stay inside the current approved folder.");
+  }
+
   if (!isMarkdownFile(currentPath)) {
     throw new Error("Auto-refresh only supports Markdown files.");
   }
@@ -845,6 +916,10 @@ async function validateWatchContext(context) {
     ? context.rootPath.trim()
     : path.dirname(currentPath);
   const rootPath = path.resolve(rootPathValue);
+
+  if (!isPathInsideApprovedRoot(rootPath)) {
+    throw new Error("Watch roots must stay inside the current approved folder.");
+  }
 
   let rootStats;
   try {
@@ -940,6 +1015,10 @@ async function validateRevealTarget(target) {
 
   const absolutePath = path.resolve(target.trim());
 
+  if (!isPathInsideApprovedRoot(absolutePath)) {
+    throw new Error("Blocked: reveal requests must stay inside the current approved folder.");
+  }
+
   let stats;
   try {
     stats = await fsp.stat(absolutePath);
@@ -961,6 +1040,11 @@ async function sendOpenedTarget(targetPath) {
   }
 
   const payload = await inspectTarget(targetPath);
+
+  if (!payload?.error) {
+    setApprovedRootPath(payload.rootPath);
+  }
+
   mainWindow.webContents.send("target:opened", payload);
 }
 
@@ -975,7 +1059,13 @@ async function showOpenPicker(options, failureLabel) {
       return null;
     }
 
-    return inspectTarget(result.filePaths[0]);
+    const target = await inspectTarget(result.filePaths[0]);
+
+    if (!target?.error) {
+      setApprovedRootPath(target.rootPath);
+    }
+
+    return target;
   } catch (error) {
     return {
       error: `Unable to open the ${failureLabel} picker.${error?.message ? ` ${error.message}` : ""}`
@@ -1017,6 +1107,7 @@ function createWindow() {
 
   mainWindow.on("closed", () => {
     clearWatchContext();
+    setApprovedRootPath(null);
     mainWindow = null;
   });
 }
@@ -1043,6 +1134,7 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   clearWatchContext();
+  setApprovedRootPath(null);
 
   if (process.platform !== "darwin") {
     app.quit();
@@ -1056,13 +1148,20 @@ app.on("open-file", (event, filePath) => {
 
 ipcMain.handle("audit:open", async () => {
   const demoPaths = await ensureAuditDemoWorkspace();
+  const target = await inspectTarget(demoPaths.startFile);
+
+  if (!target?.error) {
+    setApprovedRootPath(target.rootPath);
+  }
+
   return {
-    target: await inspectTarget(demoPaths.startFile),
+    target,
     paths: demoPaths
   };
 });
 
 ipcMain.handle("audit:get-paths", async () => ensureAuditDemoWorkspace());
+ipcMain.handle("audit:open-target", async (_event, action) => openAuditDemoTarget(action));
 
 ipcMain.handle("dialog:open-file", async () =>
   showOpenPicker(
@@ -1088,7 +1187,7 @@ ipcMain.handle("dialog:open-folder", async () =>
   )
 );
 
-ipcMain.handle("path:inspect", async (_event, targetPath) => inspectTarget(targetPath));
+ipcMain.handle("path:inspect", async (_event, targetPath) => inspectRendererTarget(targetPath));
 ipcMain.handle("file:read-markdown", async (_event, filePath) => readMarkdownFile(filePath));
 ipcMain.handle("markdown:render", async (_event, markdown, currentFilePath, rootPath) =>
   renderMarkdown(
@@ -1113,7 +1212,13 @@ ipcMain.handle("app:get-launch-target", async () => {
 
   const launchPath = pendingOpenPath;
   pendingOpenPath = null;
-  return inspectTarget(launchPath);
+  const target = await inspectTarget(launchPath);
+
+  if (!target?.error) {
+    setApprovedRootPath(target.rootPath);
+  }
+
+  return target;
 });
 ipcMain.handle("shell:open-external", async (_event, target) => {
   await shell.openExternal(validateExternalTarget(target));

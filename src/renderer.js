@@ -25,7 +25,8 @@ const state = {
   auditDemo: {
     workspacePath: null,
     paths: null,
-    results: []
+    currentResult: null,
+    activeAction: null
   }
 };
 
@@ -63,14 +64,11 @@ const elements = {
   openFolderButton: document.querySelector("#openFolderButton"),
   openAuditDemosButton: document.querySelector("#openAuditDemosButton"),
   toggleSidebarButton: document.querySelector("#toggleSidebarButton"),
-  toggleAdvancedButton: document.querySelector("#toggleAdvancedButton"),
   sidebarResizeHandle: document.querySelector("#sidebarResizeHandle"),
   themeSelectShell: document.querySelector("#themeSelectShell"),
   themeSelectTrigger: document.querySelector("#themeSelectTrigger"),
   themeSelectLabel: document.querySelector("#themeSelectLabel"),
   themeSelectMenu: document.querySelector("#themeSelectMenu"),
-  pathForm: document.querySelector("#pathForm"),
-  pathInput: document.querySelector("#pathInput"),
   filterInput: document.querySelector("#filterInput"),
   fileList: document.querySelector("#fileList"),
   fileCount: document.querySelector("#fileCount"),
@@ -531,6 +529,26 @@ function setAuditDemoPaths(paths) {
   state.auditDemo.paths = paths;
 }
 
+function getAuditActionButtons() {
+  return [
+    elements.auditSymlinkButton,
+    elements.auditBridgeButton,
+    elements.auditFolderPerfButton,
+    elements.auditLargeDocButton,
+    elements.auditUiStressButton
+  ].filter(Boolean);
+}
+
+function setActiveAuditAction(action) {
+  state.auditDemo.activeAction = action ?? null;
+
+  for (const button of getAuditActionButtons()) {
+    const isActive = Boolean(action) && button.dataset.auditAction === action;
+    button.dataset.active = String(isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  }
+}
+
 function isAuditDemoActive() {
   const workspacePath = state.auditDemo.workspacePath;
 
@@ -544,27 +562,32 @@ function renderAuditResults() {
 
   elements.auditResults.innerHTML = "";
 
-  for (const result of state.auditDemo.results) {
-    const card = document.createElement("article");
-    card.className = "audit-result";
-    card.dataset.kind = result.kind ?? "info";
+  const result = state.auditDemo.currentResult;
 
-    const title = document.createElement("p");
-    title.className = "audit-result-title";
-    title.textContent = result.title;
-    card.append(title);
-
-    const body = document.createElement("p");
-    body.className = "audit-result-body";
-    body.textContent = result.body;
-    card.append(body);
-
-    elements.auditResults.append(card);
+  if (!result) {
+    return;
   }
+
+  const card = document.createElement("article");
+  card.className = "audit-result";
+  card.dataset.kind = result.kind ?? "info";
+
+  const title = document.createElement("p");
+  title.className = "audit-result-title";
+  title.textContent = result.title;
+  card.append(title);
+
+  const body = document.createElement("p");
+  body.className = "audit-result-body";
+  body.textContent = result.body;
+  card.append(body);
+
+  elements.auditResults.append(card);
 }
 
-function addAuditResult(title, body, kind = "info") {
-  state.auditDemo.results = [{ title, body, kind }, ...state.auditDemo.results].slice(0, 6);
+function addAuditResult(title, body, kind = "info", action = null) {
+  state.auditDemo.currentResult = { title, body, kind };
+  setActiveAuditAction(action);
   renderAuditResults();
 }
 
@@ -591,7 +614,7 @@ function syncAuditPanel() {
 
   if (currentPath.endsWith("/02-renderer-authority/inside/open-me.md")) {
     elements.auditPanelSummary.textContent =
-      "Bridge Escape simulates a compromised renderer calling the preload bridge directly and reading paths outside the folder the user opened.";
+      "Bridge Escape simulates a compromised renderer asking for paths outside the opened folder. The correct behavior is that the app blocks those requests outright. Only explicit user actions like Open File or Open Folder can change scope.";
     return;
   }
 
@@ -614,13 +637,15 @@ function syncAuditPanel() {
 async function openAuditDemoWorkspace() {
   const { target, paths } = await getBridge().openAuditDemos();
   setAuditDemoPaths(paths);
-  state.auditDemo.results = [];
+  state.auditDemo.currentResult = null;
+  setActiveAuditAction(null);
   renderAuditResults();
   await loadTarget(target);
   addAuditResult(
     "Audit demos ready",
     `Generated a temporary demo workspace at ${paths.workspacePath}. Use the panel buttons to run each repro inside the app.`,
-    "success"
+    "success",
+    null
   );
 }
 
@@ -628,12 +653,13 @@ async function openAuditSymlinkDemo() {
   const paths = state.auditDemo.paths ?? await getBridge().getAuditDemoPaths();
   setAuditDemoPaths(paths);
 
-  const target = await getBridge().inspectPath(paths.symlinkDemo.startFile);
+  const target = await getBridge().openAuditDemoTarget("symlink");
   await loadTarget(target);
   addAuditResult(
     "Symlink escape",
     "The document now links to a symlink inside the opened folder. Click the escape link in the note. The correct behavior is that the app blocks it because the real destination lives outside the opened folder.",
-    "success"
+    "success",
+    "symlink"
   );
 }
 
@@ -641,25 +667,38 @@ async function runAuditBridgeEscapeDemo() {
   const paths = state.auditDemo.paths ?? await getBridge().getAuditDemoPaths();
   setAuditDemoPaths(paths);
 
-  const insideTarget = await getBridge().inspectPath(paths.authorityDemo.startFile);
+  const insideTarget = await getBridge().openAuditDemoTarget("bridge");
   await loadTarget(insideTarget);
 
   const folderStart = performance.now();
   const inspectedOutsideFolder = await getBridge().inspectPath(paths.authorityDemo.outsideFolder);
   const folderEnd = performance.now();
-  const fileStart = performance.now();
-  const outsideFile = await getBridge().readMarkdownFile(paths.authorityDemo.outsideFile);
-  const fileEnd = performance.now();
+  const folderOutcome = inspectedOutsideFolder?.error
+    ? `Blocked in ${formatDurationMs(folderEnd - folderStart)}`
+    : `Allowed in ${formatDurationMs(folderEnd - folderStart)}`;
+  let fileOutcome = "";
+
+  try {
+    const fileStart = performance.now();
+    const outsideFile = await getBridge().readMarkdownFile(paths.authorityDemo.outsideFile);
+    const fileEnd = performance.now();
+    fileOutcome = `Allowed: ${outsideFile.name} (${formatFileSize(outsideFile.sizeBytes) || "unknown size"}) in ${formatDurationMs(fileEnd - fileStart)}.`;
+  } catch (error) {
+    fileOutcome = `Blocked: ${formatError(error, "outside file read was denied.")}`;
+  }
 
   addAuditResult(
     "Bridge escape",
     [
       "This button simulates a malicious script already running in the renderer.",
-      `Outside folder inspect: ${inspectedOutsideFolder?.kind ?? "error"} in ${formatDurationMs(folderEnd - folderStart)}.`,
-      `Outside markdown read: ${outsideFile.name} (${formatFileSize(outsideFile.sizeBytes) || "unknown size"}) in ${formatDurationMs(fileEnd - fileStart)}.`,
-      "Both succeeded even though the visible root for the demo is the inside folder only."
+      `Outside folder inspect: ${folderOutcome}.`,
+      `Outside markdown read: ${fileOutcome}`,
+      inspectedOutsideFolder?.error
+        ? "The renderer could not change scope silently."
+        : "The renderer was able to change scope, which should not happen anymore."
     ].join("\n"),
-    "warning"
+    inspectedOutsideFolder?.error && fileOutcome.startsWith("Blocked:") ? "success" : "warning",
+    "bridge"
   );
 }
 
@@ -668,7 +707,7 @@ async function runAuditFolderBenchmark() {
   setAuditDemoPaths(paths);
 
   const inspectStart = performance.now();
-  const target = await getBridge().inspectPath(paths.folderBenchmark.rootPath);
+  const target = await getBridge().openAuditDemoTarget("folder");
   const inspectEnd = performance.now();
   const loadStart = performance.now();
   await loadTarget(target);
@@ -682,13 +721,16 @@ async function runAuditFolderBenchmark() {
       `Total load into sidebar + first document open: ${formatDurationMs(loadEnd - loadStart)}.`,
       "This cost currently runs on the main process."
     ].join("\n"),
-    "warning"
+    "warning",
+    "folder"
   );
 }
 
 async function runAuditLargeDocumentDemo() {
   const paths = state.auditDemo.paths ?? await getBridge().getAuditDemoPaths();
   setAuditDemoPaths(paths);
+
+  await loadTarget(await getBridge().openAuditDemoTarget("large"));
 
   const readStart = performance.now();
   const file = await getBridge().readMarkdownFile(paths.largeDocument.filePath);
@@ -697,8 +739,6 @@ async function runAuditLargeDocumentDemo() {
   const html = await getBridge().renderMarkdown(file.content, file.absolutePath, paths.largeDocument.rootPath);
   const renderEnd = performance.now();
 
-  await loadTarget(await getBridge().inspectPath(paths.largeDocument.filePath));
-
   addAuditResult(
     "Large document benchmark",
     [
@@ -706,7 +746,8 @@ async function runAuditLargeDocumentDemo() {
       `Markdown render produced ${formatFileSize(html.length) || `${html.length} chars`} in ${formatDurationMs(renderEnd - renderStart)}.`,
       "The file is fully read and parsed before the renderer receives the HTML."
     ].join("\n"),
-    "warning"
+    "warning",
+    "large"
   );
 }
 
@@ -715,7 +756,7 @@ async function runAuditUiStressDemo() {
   setAuditDemoPaths(paths);
 
   if (state.rootPath !== paths.folderBenchmark.rootPath) {
-    await runAuditFolderBenchmark();
+    await loadTarget(await getBridge().openAuditDemoTarget("ui"));
   }
 
   const originalPreferences = { ...state.preferences };
@@ -749,7 +790,8 @@ async function runAuditUiStressDemo() {
       `Two full sidebar rerenders on the large index: ${formatDurationMs(renderEnd - renderStart)}.`,
       "This showcases the current synchronous localStorage writes and full-list rerender strategy."
     ].join("\n"),
-    "warning"
+    "warning",
+    "ui"
   );
 }
 
@@ -1221,29 +1263,6 @@ async function handleWatchedTargetChanged(payload) {
   }
 }
 
-async function loadPathFromInput() {
-  const targetPath = elements.pathInput.value.trim();
-
-  if (!targetPath) {
-    showStatus("Enter a file or folder path first.", "error");
-    return;
-  }
-
-  showStatus("Resolving path…");
-  try {
-    const target = await getBridge().inspectPath(targetPath);
-    await loadTarget(target);
-  } catch (error) {
-    reportError(error, "Unable to resolve the provided path.");
-  }
-}
-
-function toggleAdvancedPanel(forceOpen) {
-  const isOpen = typeof forceOpen === "boolean" ? forceOpen : elements.pathForm.hidden;
-  elements.pathForm.hidden = !isOpen;
-  elements.toggleAdvancedButton.setAttribute("aria-expanded", String(isOpen));
-}
-
 function toggleSidebar(forceOpen) {
   state.preferences.sidebarOpen = typeof forceOpen === "boolean" ? forceOpen : !state.preferences.sidebarOpen;
 
@@ -1440,10 +1459,6 @@ function bindEvents() {
     }
   });
 
-  elements.toggleAdvancedButton.addEventListener("click", () => {
-    toggleAdvancedPanel();
-  });
-
   elements.toggleSidebarButton.addEventListener("click", () => {
     toggleSidebar();
   });
@@ -1454,11 +1469,6 @@ function bindEvents() {
   elements.sidebarResizeHandle.addEventListener("pointercancel", stopSidebarResize);
   elements.sidebarResizeHandle.addEventListener("lostpointercapture", handleSidebarResizeLostCapture);
   elements.sidebarResizeHandle.addEventListener("keydown", handleSidebarResizeKeydown);
-
-  elements.pathForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    void loadPathFromInput();
-  });
 
   elements.fileList.addEventListener("click", (event) => {
     const fileButton = event.target.closest(".file-row");
@@ -1717,7 +1727,6 @@ function bindEvents() {
 async function initialize() {
   try {
     applyPreferences();
-    toggleAdvancedPanel(false);
     setSourceInfo();
     updateEmptyState();
     renderFileList();

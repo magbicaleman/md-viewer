@@ -341,14 +341,12 @@ body[data-resizing-sidebar="true"] .sidebar-resize-handle::before {
 }
 
 .actions,
-.path-input-row,
 .settings-panel {
   display: flex;
   gap: 10px;
 }
 
-.actions > *,
-.path-input-row > * {
+.actions > * {
   min-width: 0;
 }
 
@@ -423,38 +421,10 @@ body[data-resizing-sidebar="true"] .sidebar-resize-handle::before {
   fill: none;
 }
 
-.path-form,
-.advanced-panel,
 .library-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.advanced-panel {
-  gap: 8px;
-}
-
-.field-label {
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-
-.text-button {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 0.88rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  padding: 0;
-  text-align: left;
-}
-
-.text-button:hover {
-  color: var(--text);
 }
 
 .text-input,
@@ -1273,6 +1243,13 @@ body[data-resizing-sidebar="true"] .sidebar-inner {
   padding-inline: 16px;
 }
 
+.audit-actions .button[data-active="true"] {
+  background: var(--control-pill-active);
+  border-color: var(--control-border-strong);
+  color: var(--text);
+  box-shadow: 0 10px 24px rgba(var(--reader-shadow-rgb), 0.16);
+}
+
 .audit-results {
   display: grid;
   gap: 10px;
@@ -1593,14 +1570,6 @@ body[data-resizing-sidebar="true"] .sidebar-inner {
 
   .reader-header {
     flex-direction: column;
-  }
-
-  .path-input-row {
-    flex-wrap: wrap;
-  }
-
-  .path-input-row .button {
-    width: 100%;
   }
 
   body[data-sidebar="closed"] .app-shell {

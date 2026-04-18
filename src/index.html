@@ -146,11 +146,11 @@
             </div>
 
             <div class="audit-actions">
-              <button id="auditSymlinkButton" class="button button-outline" type="button">Symlink Escape</button>
-              <button id="auditBridgeButton" class="button button-outline" type="button">Bridge Escape</button>
-              <button id="auditFolderPerfButton" class="button button-outline" type="button">Folder Scan</button>
-              <button id="auditLargeDocButton" class="button button-outline" type="button">Large Document</button>
-              <button id="auditUiStressButton" class="button button-outline" type="button">UI Stress</button>
+              <button id="auditSymlinkButton" class="button button-outline" type="button" data-audit-action="symlink">Symlink Escape</button>
+              <button id="auditBridgeButton" class="button button-outline" type="button" data-audit-action="bridge">Bridge Escape</button>
+              <button id="auditFolderPerfButton" class="button button-outline" type="button" data-audit-action="folder">Folder Scan</button>
+              <button id="auditLargeDocButton" class="button button-outline" type="button" data-audit-action="large">Large Document</button>
+              <button id="auditUiStressButton" class="button button-outline" type="button" data-audit-action="ui">UI Stress</button>
             </div>
 
             <div id="auditResults" class="audit-results" aria-live="polite"></div>
@@ -208,32 +208,6 @@
             <button id="openFileButton" class="button button-solid" type="button">Open File</button>
             <button id="openFolderButton" class="button button-muted" type="button">Open Folder</button>
             <button id="openAuditDemosButton" class="button button-outline" type="button">Audit Demos</button>
-          </div>
-
-          <div class="advanced-panel">
-            <button
-              id="toggleAdvancedButton"
-              class="text-button"
-              type="button"
-              aria-expanded="false"
-              aria-controls="advancedPathPanel"
-            >
-              Advanced
-            </button>
-
-            <form id="pathForm" class="path-form" hidden>
-              <label class="field-label" for="pathInput">Paste a Direct Path</label>
-              <div id="advancedPathPanel" class="path-input-row">
-                <input
-                  id="pathInput"
-                  class="text-input"
-                  type="text"
-                  placeholder="/Users/name/notes or /Users/name/notes/today.md"
-                  autocomplete="off"
-                />
-                <button class="button button-outline" type="submit">Load</button>
-              </div>
-            </form>
           </div>
 
           <div class="library-panel">
