@@ -94,7 +94,3 @@ Cross-file links such as `./other-note.md#section-name` should continue to work.
 2. Click a few items in the outline.
 3. Use the links in the quick-jump list near the top.
 4. Scroll into the middle of the file and reopen it from the sidebar.
-
-### Follow-Up Work
-
-Search is still the next major piece. Once that is in place, the outline and search together should cover most large-note navigation needs.
