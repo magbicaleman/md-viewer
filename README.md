@@ -8,7 +8,6 @@ A lightweight Electron app for reading Markdown files with a minimal interface.
 
 - Open a single Markdown file
 - Open a folder and recursively scan for Markdown files
-- Paste a direct path to a file or folder
 - Render local images and internal Markdown links
 - Adjust theme, font size, and reading width with persisted local settings
 
