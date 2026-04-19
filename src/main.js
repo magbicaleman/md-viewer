@@ -105,21 +105,48 @@ function escapeAttribute(value = "") {
   return escapeHtml(value);
 }
 
+function slugifyHeadingText(value = "") {
+  const normalized = String(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
+  return normalized || "section";
+}
+
+function createHeadingId(text, slugCounts) {
+  const baseId = slugifyHeadingText(text);
+  const nextCount = (slugCounts.get(baseId) ?? 0) + 1;
+  slugCounts.set(baseId, nextCount);
+  return nextCount === 1 ? baseId : `${baseId}-${nextCount}`;
+}
+
 function splitTarget(target = "") {
   const hashIndex = target.indexOf("#");
   const queryIndex = target.indexOf("?");
   const boundary = [hashIndex, queryIndex].filter((index) => index >= 0).sort((left, right) => left - right)[0];
+  const search = queryIndex >= 0
+    ? target.slice(queryIndex, hashIndex >= 0 && hashIndex > queryIndex ? hashIndex : target.length)
+    : "";
+  const hash = hashIndex >= 0 ? target.slice(hashIndex) : "";
 
   if (boundary === undefined) {
     return {
       pathname: target,
-      suffix: ""
+      suffix: "",
+      search: "",
+      hash: ""
     };
   }
 
   return {
     pathname: target.slice(0, boundary),
-    suffix: target.slice(boundary)
+    suffix: `${search}${hash}`,
+    search,
+    hash
   };
 }
 
@@ -212,13 +239,14 @@ function resolveContainedLocalPath(targetPath, rootPath) {
 }
 
 
-function buildLocalResource(absolutePath, currentFilePath, suffix = "") {
+function buildLocalResource(absolutePath, currentFilePath, suffix = "", hash = "") {
   const fileHref = pathToFileURL(absolutePath).toString();
 
   return {
     kind: MARKDOWN_EXTENSIONS.has(path.extname(absolutePath).toLowerCase()) ? "markdown" : "file",
     href: `${fileHref}${suffix}`,
     path: absolutePath,
+    hash,
     previewKind: "location",
     previewTarget: formatLocalDestination(absolutePath, currentFilePath, suffix),
     sizeBytes: getLocalFileSize(absolutePath)
@@ -254,12 +282,13 @@ function resolveResource(rawTarget, currentFilePath, rootPath) {
   }
 
   const trimmedTarget = rawTarget.trim();
-  const { pathname, suffix } = splitTarget(trimmedTarget);
+  const { pathname, suffix, hash } = splitTarget(trimmedTarget);
 
   if (!pathname && suffix.startsWith("#") && currentFilePath) {
     return {
       kind: "location",
       href: trimmedTarget,
+      hash,
       previewKind: "location",
       previewTarget: `${path.basename(currentFilePath)}${suffix}`
     };
@@ -284,7 +313,7 @@ function resolveResource(rawTarget, currentFilePath, rootPath) {
         );
       }
 
-      return buildLocalResource(containment.realTargetPath, currentFilePath, `${url.search}${url.hash}`);
+      return buildLocalResource(containment.realTargetPath, currentFilePath, `${url.search}${url.hash}`, url.hash);
     }
 
     return {
@@ -311,13 +340,23 @@ function resolveResource(rawTarget, currentFilePath, rootPath) {
     );
   }
 
-  return buildLocalResource(containment.realTargetPath, currentFilePath, suffix);
+  return buildLocalResource(containment.realTargetPath, currentFilePath, suffix, hash);
 }
 
 function buildMarkdownRenderer(currentFilePath, rootPath) {
   const renderer = new marked.Renderer();
+  const headingSlugCounts = new Map();
 
   renderer.html = (html) => escapeHtml(html);
+
+  renderer.heading = function heading({ tokens, depth }) {
+    const html = this.parser.parseInline(tokens);
+    const plainText = this.parser.parseInline(tokens, this.parser.textRenderer).trim();
+    const headingId = createHeadingId(plainText, headingSlugCounts);
+    const ariaLabel = plainText ? `Jump to ${plainText}` : "Jump to section";
+
+    return `<h${depth} id="${escapeAttribute(headingId)}" data-heading-depth="${depth}" data-heading-text="${escapeAttribute(plainText)}"><a class="heading-anchor" href="#${escapeAttribute(headingId)}" aria-label="${escapeAttribute(ariaLabel)}">#</a>${html}</h${depth}>`;
+  };
 
   renderer.link = function link({ href, title, tokens }) {
     const text = this.parser.parseInline(tokens);
@@ -342,7 +381,8 @@ function buildMarkdownRenderer(currentFilePath, rootPath) {
 
     if (resolved.kind === "markdown") {
       const targetPath = resolved.path ?? href;
-      return `<a href="#" data-md-path="${escapeAttribute(targetPath)}"${previewAttributes}${titleAttribute}>${text}</a>`;
+      const hashAttribute = resolved.hash ? ` data-md-hash="${escapeAttribute(resolved.hash)}"` : "";
+      return `<a href="#" data-md-path="${escapeAttribute(targetPath)}"${hashAttribute}${previewAttributes}${titleAttribute}>${text}</a>`;
     }
 
     if (resolved.kind === "file") {

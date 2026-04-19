@@ -30,6 +30,12 @@ Or launch the included sample set:
 npm start -- ./examples
 ```
 
+For the large-document navigation example specifically:
+
+```bash
+npm start -- ./examples/large-doc.md
+```
+
 ## Build Installable Apps
 
 The project now includes `electron-builder`, so you can package a real app instead of launching it through `npm start`.

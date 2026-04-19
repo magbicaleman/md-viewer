@@ -16,6 +16,25 @@
 
         <div class="titlebar-actions">
           <button
+            id="toggleOutlineButton"
+            class="button button-outline button-with-icon"
+            type="button"
+            aria-pressed="false"
+            aria-label="Toggle outline"
+            title="Toggle outline"
+            hidden
+          >
+            <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 6.5h14"></path>
+              <path d="M5 12h14"></path>
+              <path d="M5 17.5h14"></path>
+              <circle cx="3.5" cy="6.5" r="0.75" fill="currentColor" stroke="none"></circle>
+              <circle cx="3.5" cy="12" r="0.75" fill="currentColor" stroke="none"></circle>
+              <circle cx="3.5" cy="17.5" r="0.75" fill="currentColor" stroke="none"></circle>
+            </svg>
+            <span class="button-label">Outline</span>
+          </button>
+          <button
             id="toggleSidebarButton"
             class="button button-outline button-with-icon"
             type="button"
@@ -134,9 +153,32 @@
 
           <div id="statusBanner" class="status-banner" hidden></div>
 
+          <section id="documentTools" class="document-tools" hidden>
+            <div class="document-tools-copy">
+              <p id="documentToolsEyebrow" class="document-tools-eyebrow">Large document mode</p>
+              <p id="documentToolsSummary" class="document-tools-summary">Outline and section tracking are enabled.</p>
+            </div>
+
+            <div class="document-tools-actions">
+              <p id="documentCurrentSection" class="document-current-section">Top of document</p>
+              <button id="jumpToTopButton" class="button button-outline document-tools-button" type="button">
+                Jump to Top
+              </button>
+            </div>
+          </section>
+
         </div>
 
         <div class="reader-shell-bottom">
+          <aside id="documentOutline" class="document-outline" hidden>
+            <div class="document-outline-header">
+              <p class="document-outline-eyebrow">Outline</p>
+              <p id="documentOutlineSummary" class="document-outline-summary">0 headings</p>
+            </div>
+
+            <div id="documentOutlineList" class="document-outline-list"></div>
+          </aside>
+
           <div class="reader-content">
             <section id="emptyState" class="empty-state">
               <div class="empty-card">

@@ -7,6 +7,10 @@ const RANGE_BUBBLE_IDLE_DELAY_MS = 1400;
 const LINK_PREVIEW_OFFSET_PX = 18;
 const SIDEBAR_METADATA_PREFETCH_MARGIN_PX = 180;
 const SIDEBAR_METADATA_BATCH_LIMIT = 48;
+const LARGE_DOCUMENT_CHARACTER_THRESHOLD = 12000;
+const LARGE_DOCUMENT_HEADING_THRESHOLD = 8;
+const ACTIVE_HEADING_TOP_OFFSET_PX = 120;
+const SCROLL_TARGET_TOP_OFFSET_PX = 24;
 const SIDEBAR_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
@@ -26,7 +30,13 @@ const state = {
   preferenceSaveTimer: null,
   entryMetadataHydrationTimer: null,
   pendingEntryMetadataPaths: new Set(),
-  preferenceSaveCount: 0
+  preferenceSaveCount: 0,
+  documentHeadings: [],
+  activeHeadingId: "",
+  isLargeDocument: false,
+  currentDocumentSizeBytes: null,
+  scrollPositions: new Map(),
+  outlineVisible: false
 };
 
 function normalizeReaderWidth(value) {
@@ -61,6 +71,7 @@ function normalizeSidebarWidth(value) {
 const elements = {
   openFileButton: document.querySelector("#openFileButton"),
   openFolderButton: document.querySelector("#openFolderButton"),
+  toggleOutlineButton: document.querySelector("#toggleOutlineButton"),
   toggleSidebarButton: document.querySelector("#toggleSidebarButton"),
   sidebarResizeHandle: document.querySelector("#sidebarResizeHandle"),
   themeSelectShell: document.querySelector("#themeSelectShell"),
@@ -82,6 +93,14 @@ const elements = {
   linkPreviewHint: document.querySelector("#linkPreviewHint"),
   emptyState: document.querySelector("#emptyState"),
   statusBanner: document.querySelector("#statusBanner"),
+  documentTools: document.querySelector("#documentTools"),
+  documentToolsEyebrow: document.querySelector("#documentToolsEyebrow"),
+  documentToolsSummary: document.querySelector("#documentToolsSummary"),
+  documentCurrentSection: document.querySelector("#documentCurrentSection"),
+  jumpToTopButton: document.querySelector("#jumpToTopButton"),
+  documentOutline: document.querySelector("#documentOutline"),
+  documentOutlineSummary: document.querySelector("#documentOutlineSummary"),
+  documentOutlineList: document.querySelector("#documentOutlineList"),
   toggleSettingsButton: document.querySelector("#toggleSettingsButton"),
   settingsPanel: document.querySelector("#settingsPanel"),
   pathDisplayControl: document.querySelector("#pathDisplayControl"),
@@ -449,6 +468,14 @@ function showStatus(message, kind = "info") {
   elements.statusBanner.dataset.kind = kind;
 }
 
+function escapeSelector(value = "") {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(value);
+  }
+
+  return String(value).replace(/["\\#.;?+*~':!^$[\]()=>|/@]/g, "\\$&");
+}
+
 function formatError(error, fallbackMessage) {
   if (error instanceof Error) {
     return error.message || fallbackMessage;
@@ -554,8 +581,10 @@ function updateEmptyState() {
 function resetDocumentState() {
   hideLinkPreview();
   state.currentPath = null;
+  resetDocumentNavigation();
   elements.titlebarDocumentName.textContent = "No document loaded";
   elements.markdownContent.innerHTML = "";
+  elements.readerContent.scrollTop = 0;
   updateEmptyState();
   renderFileList();
   void getBridge().clearWatchContext().catch((error) => {
@@ -582,6 +611,19 @@ function updateReaderScrollState() {
     shellBottom.dataset.scrollTopShadow = String(showTopShadow);
     shellBottom.dataset.scrollBottomShadow = String(showBottomShadow);
   }
+}
+
+function rememberCurrentScrollPosition() {
+  if (!state.currentPath || !elements.readerContent) {
+    return;
+  }
+
+  state.scrollPositions.set(state.currentPath, elements.readerContent.scrollTop);
+}
+
+function getStoredScrollPosition(filePath) {
+  const storedValue = state.scrollPositions.get(filePath);
+  return Number.isFinite(storedValue) ? storedValue : 0;
 }
 
 function formatEntryModifiedAt(modifiedAt) {
@@ -620,6 +662,260 @@ function formatFileSize(sizeBytes) {
 
   const precision = value >= 100 ? 0 : value >= 10 ? 1 : 2;
   return `${value.toFixed(precision)} ${units[unitIndex]}`;
+}
+
+function resetDocumentNavigation() {
+  state.documentHeadings = [];
+  state.activeHeadingId = "";
+  state.isLargeDocument = false;
+  state.currentDocumentSizeBytes = null;
+  state.outlineVisible = false;
+
+  if (elements.documentTools) {
+    elements.documentTools.hidden = true;
+  }
+
+  if (elements.documentToolsSummary) {
+    elements.documentToolsSummary.textContent = "Outline and section tracking are enabled.";
+  }
+
+  if (elements.documentToolsEyebrow) {
+    elements.documentToolsEyebrow.textContent = "Large document mode";
+  }
+
+  if (elements.documentCurrentSection) {
+    elements.documentCurrentSection.textContent = "Top of document";
+  }
+
+  if (elements.documentOutline) {
+    elements.documentOutline.hidden = true;
+  }
+
+  if (elements.documentOutlineSummary) {
+    elements.documentOutlineSummary.textContent = "0 headings";
+  }
+
+  if (elements.documentOutlineList) {
+    elements.documentOutlineList.replaceChildren();
+  }
+
+  syncOutlineToggleButton();
+}
+
+function measureHeadingOffsetTop(element) {
+  const containerRect = elements.readerContent.getBoundingClientRect();
+  const headingRect = element.getBoundingClientRect();
+  return headingRect.top - containerRect.top + elements.readerContent.scrollTop;
+}
+
+function refreshDocumentHeadingOffsets() {
+  if (state.documentHeadings.length === 0) {
+    return;
+  }
+
+  state.documentHeadings = state.documentHeadings.map((heading) => ({
+    ...heading,
+    offsetTop: measureHeadingOffsetTop(heading.element)
+  }));
+}
+
+function setActiveHeadingId(nextHeadingId) {
+  state.activeHeadingId = nextHeadingId;
+
+  for (const button of elements.documentOutlineList?.querySelectorAll(".document-outline-link") ?? []) {
+    const isActive = button.dataset.headingId === nextHeadingId;
+    button.dataset.active = String(isActive);
+    button.setAttribute("aria-current", isActive ? "location" : "false");
+  }
+
+  const activeHeading = state.documentHeadings.find((heading) => heading.id === nextHeadingId);
+  elements.documentCurrentSection.textContent = activeHeading?.text || "Top of document";
+}
+
+function updateActiveHeadingFromScroll() {
+  if (state.documentHeadings.length === 0) {
+    setActiveHeadingId("");
+    return;
+  }
+
+  const threshold = elements.readerContent.scrollTop + ACTIVE_HEADING_TOP_OFFSET_PX;
+  let activeHeading = state.documentHeadings[0];
+
+  for (const heading of state.documentHeadings) {
+    if (heading.offsetTop <= threshold) {
+      activeHeading = heading;
+      continue;
+    }
+
+    break;
+  }
+
+  setActiveHeadingId(activeHeading?.id ?? "");
+}
+
+function isLargeDocument(file, headings) {
+  const textLength = typeof file?.content === "string" ? file.content.length : 0;
+  return textLength >= LARGE_DOCUMENT_CHARACTER_THRESHOLD || headings.length >= LARGE_DOCUMENT_HEADING_THRESHOLD;
+}
+
+function hasOutlineContent() {
+  return state.documentHeadings.length > 0;
+}
+
+function syncOutlineToggleButton() {
+  const shouldShowToggle = Boolean(state.currentPath) && hasOutlineContent();
+
+  elements.toggleOutlineButton.hidden = !shouldShowToggle;
+  elements.toggleOutlineButton.setAttribute("aria-pressed", String(state.outlineVisible));
+  elements.toggleOutlineButton.setAttribute(
+    "aria-label",
+    state.outlineVisible ? "Hide outline" : "Show outline"
+  );
+  elements.toggleOutlineButton.setAttribute(
+    "title",
+    state.outlineVisible ? "Hide outline" : "Show outline"
+  );
+}
+
+function renderDocumentOutline() {
+  const shouldShowOutline = state.outlineVisible && hasOutlineContent();
+  const headingCountLabel = `${state.documentHeadings.length} heading${state.documentHeadings.length === 1 ? "" : "s"}`;
+
+  elements.documentOutlineSummary.textContent = headingCountLabel;
+  elements.documentOutline.hidden = !shouldShowOutline;
+
+  if (!shouldShowOutline) {
+    elements.documentOutlineList.replaceChildren();
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  for (const heading of state.documentHeadings) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "document-outline-link";
+    button.dataset.headingId = heading.id;
+    button.dataset.active = String(heading.id === state.activeHeadingId);
+    button.setAttribute("aria-current", heading.id === state.activeHeadingId ? "location" : "false");
+    button.style.setProperty("--outline-depth", String(Math.max(1, heading.level)));
+    button.textContent = heading.text;
+    button.title = heading.text;
+    fragment.append(button);
+  }
+
+  elements.documentOutlineList.replaceChildren(fragment);
+}
+
+function updateDocumentTools() {
+  const shouldShowTools = Boolean(state.currentPath) && hasOutlineContent() && (state.isLargeDocument || state.outlineVisible);
+
+  elements.documentTools.hidden = !shouldShowTools;
+
+  if (!shouldShowTools) {
+    return;
+  }
+
+  const sizeLabel = formatFileSize(state.currentDocumentSizeBytes);
+  const summaryParts = [`${state.documentHeadings.length} heading${state.documentHeadings.length === 1 ? "" : "s"}`];
+
+  if (sizeLabel) {
+    summaryParts.unshift(sizeLabel);
+  }
+
+  elements.documentToolsEyebrow.textContent = state.isLargeDocument ? "Large document mode" : "Document navigation";
+  elements.documentToolsSummary.textContent = summaryParts.join(" • ");
+
+  if (!state.activeHeadingId) {
+    updateActiveHeadingFromScroll();
+  } else {
+    setActiveHeadingId(state.activeHeadingId);
+  }
+}
+
+function configureDocumentNavigation(file) {
+  const headings = Array.from(elements.markdownContent.querySelectorAll("h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]"))
+    .map((element) => ({
+      id: element.id,
+      level: Number(element.dataset.headingDepth ?? element.tagName.slice(1)),
+      text: element.dataset.headingText?.trim() || element.textContent?.trim() || element.id,
+      element,
+      offsetTop: 0
+    }))
+    .filter((heading) => heading.id && heading.text);
+
+  state.documentHeadings = headings;
+  state.activeHeadingId = headings[0]?.id ?? "";
+  state.isLargeDocument = isLargeDocument(file, headings);
+  state.currentDocumentSizeBytes = Number.isFinite(file?.sizeBytes) ? file.sizeBytes : file?.content?.length ?? null;
+  state.outlineVisible = state.isLargeDocument && headings.length > 0;
+
+  syncOutlineToggleButton();
+  renderDocumentOutline();
+  updateDocumentTools();
+}
+
+function toggleDocumentOutline(forceVisible) {
+  if (!hasOutlineContent()) {
+    return;
+  }
+
+  state.outlineVisible = typeof forceVisible === "boolean" ? forceVisible : !state.outlineVisible;
+  syncOutlineToggleButton();
+  renderDocumentOutline();
+  updateDocumentTools();
+
+  requestAnimationFrame(() => {
+    refreshDocumentHeadingOffsets();
+    updateReaderScrollState();
+    updateActiveHeadingFromScroll();
+  });
+}
+
+function normalizeHash(hash = "") {
+  const normalizedHash = String(hash).trim();
+
+  if (!normalizedHash) {
+    return "";
+  }
+
+  return normalizedHash.startsWith("#") ? normalizedHash : `#${normalizedHash}`;
+}
+
+function getDocumentTarget(hash) {
+  const normalizedHash = normalizeHash(hash);
+
+  if (!normalizedHash) {
+    return null;
+  }
+
+  return elements.markdownContent.querySelector(`#${escapeSelector(normalizedHash.slice(1))}`);
+}
+
+function scrollToDocumentHash(hash, { behavior = "smooth", silent = false } = {}) {
+  const target = getDocumentTarget(hash);
+
+  if (!(target instanceof HTMLElement)) {
+    if (!silent) {
+      showStatus(`Section not found: ${normalizeHash(hash)}`, "error");
+    }
+
+    return false;
+  }
+
+  const containerRect = elements.readerContent.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const nextScrollTop = targetRect.top - containerRect.top + elements.readerContent.scrollTop - SCROLL_TARGET_TOP_OFFSET_PX;
+
+  elements.readerContent.scrollTo({
+    top: Math.max(0, nextScrollTop),
+    behavior
+  });
+
+  const matchingHeading = target.closest("h1, h2, h3, h4, h5, h6");
+  setActiveHeadingId(matchingHeading?.id || target.id || "");
+  showStatus("");
+  return true;
 }
 
 function formatEntryMeta(entry) {
@@ -969,10 +1265,16 @@ function renderFileList() {
   scheduleVisibleEntryMetadataHydration();
 }
 
-async function openMarkdownFile(filePath) {
+async function openMarkdownFile(filePath, options = {}) {
   try {
     const bridge = getBridge();
+    const normalizedHash = normalizeHash(options.hash);
+
+    rememberCurrentScrollPosition();
+
     const file = await bridge.readMarkdownFile(filePath);
+    const sameDocument = Boolean(state.currentPath) && state.currentPath === file.absolutePath;
+    const fallbackScrollTop = sameDocument ? elements.readerContent.scrollTop : getStoredScrollPosition(file.absolutePath);
     const html = await bridge.renderMarkdown(file.content, file.absolutePath, state.rootPath);
 
     hideLinkPreview();
@@ -986,6 +1288,7 @@ async function openMarkdownFile(filePath) {
     });
     elements.titlebarDocumentName.textContent = file.name;
     elements.markdownContent.innerHTML = html;
+    configureDocumentNavigation(file);
     updateBlockedResourceNotes();
     updateEmptyState();
     renderFileList();
@@ -995,7 +1298,30 @@ async function openMarkdownFile(filePath) {
       rootPath: state.rootPath,
       sourceKind: state.sourceKind
     });
-    requestAnimationFrame(updateReaderScrollState);
+    requestAnimationFrame(() => {
+      refreshDocumentHeadingOffsets();
+
+      if (normalizedHash) {
+        const didNavigateToHash = scrollToDocumentHash(normalizedHash, {
+          behavior: "auto",
+          silent: true
+        });
+
+        if (!didNavigateToHash) {
+          elements.readerContent.scrollTop = Math.max(0, fallbackScrollTop);
+          showStatus(`Section not found: ${normalizedHash}`, "error");
+        } else {
+          showStatus("");
+        }
+      } else {
+        elements.readerContent.scrollTop = Math.max(0, fallbackScrollTop);
+      }
+
+      refreshDocumentHeadingOffsets();
+      updateReaderScrollState();
+      updateActiveHeadingFromScroll();
+      rememberCurrentScrollPosition();
+    });
   } catch (error) {
     resetDocumentState();
     reportError(error, "Unable to open the selected Markdown file.");
@@ -1039,7 +1365,7 @@ async function loadTarget(target) {
   state.sourceKind = target.kind;
   state.rootPath = target.rootPath;
   state.entries = target.entries;
-  state.currentPath = target.currentPath;
+  state.currentPath = null;
   setSourceInfo();
   updateEmptyState();
   renderFileList();
@@ -1231,13 +1557,30 @@ function handleMarkdownClick(event) {
   hideLinkPreview();
 
   const markdownPath = anchor.dataset.mdPath;
+  const markdownHash = normalizeHash(anchor.dataset.mdHash);
   const revealPath = anchor.dataset.revealPath;
+  const hrefValue = anchor.getAttribute("href")?.trim() ?? "";
+  const sameDocumentHash = !markdownPath && hrefValue.startsWith("#") && hrefValue.length > 1
+    ? normalizeHash(hrefValue)
+    : "";
   const externalHref = anchor.dataset.external === "true" ? anchor.getAttribute("href") : null;
+
+  if (sameDocumentHash) {
+    event.preventDefault();
+    scrollToDocumentHash(sameDocumentHash);
+    return;
+  }
 
   if (markdownPath) {
     event.preventDefault();
     mergeEntryIfMissing(markdownPath);
-    void openMarkdownFile(markdownPath);
+
+    if (markdownPath === state.currentPath && markdownHash) {
+      scrollToDocumentHash(markdownHash);
+      return;
+    }
+
+    void openMarkdownFile(markdownPath, { hash: markdownHash });
     return;
   }
 
@@ -1304,6 +1647,10 @@ function bindEvents() {
     toggleSidebar();
   });
 
+  elements.toggleOutlineButton.addEventListener("click", () => {
+    toggleDocumentOutline();
+  });
+
   elements.sidebarResizeHandle.addEventListener("pointerdown", startSidebarResize);
   elements.sidebarResizeHandle.addEventListener("pointermove", handleSidebarResize);
   elements.sidebarResizeHandle.addEventListener("pointerup", stopSidebarResize);
@@ -1331,7 +1678,26 @@ function bindEvents() {
 
   elements.readerContent.addEventListener("scroll", () => {
     hideLinkPreview();
+    rememberCurrentScrollPosition();
     updateReaderScrollState();
+    updateActiveHeadingFromScroll();
+  });
+
+  elements.documentOutlineList.addEventListener("click", (event) => {
+    const outlineButton = event.target.closest(".document-outline-link");
+
+    if (!outlineButton) {
+      return;
+    }
+
+    scrollToDocumentHash(`#${outlineButton.dataset.headingId}`);
+  });
+
+  elements.jumpToTopButton.addEventListener("click", () => {
+    elements.readerContent.scrollTo({
+      top: 0,
+      behavior: "smooth"
+    });
   });
 
   elements.toggleSettingsButton.addEventListener("click", () => {
@@ -1339,7 +1705,9 @@ function bindEvents() {
     syncSettingsButton();
     requestAnimationFrame(() => {
       syncAllRangeControls();
+      refreshDocumentHeadingOffsets();
       updateReaderScrollState();
+      updateActiveHeadingFromScroll();
     });
   });
 
@@ -1408,6 +1776,10 @@ function bindEvents() {
     applyReaderPreferences({ syncControls: false });
     schedulePreferenceSave();
     setRangeBubbleActive(elements.fontSizeInput, false, RANGE_BUBBLE_IDLE_DELAY_MS);
+    requestAnimationFrame(() => {
+      refreshDocumentHeadingOffsets();
+      updateActiveHeadingFromScroll();
+    });
   });
 
   elements.readerWidthInput.addEventListener("input", (event) => {
@@ -1417,6 +1789,10 @@ function bindEvents() {
     applyReaderPreferences({ syncControls: false });
     schedulePreferenceSave();
     setRangeBubbleActive(elements.readerWidthInput, false, RANGE_BUBBLE_IDLE_DELAY_MS);
+    requestAnimationFrame(() => {
+      refreshDocumentHeadingOffsets();
+      updateActiveHeadingFromScroll();
+    });
   });
 
   elements.pathDisplayControl.addEventListener("click", (event) => {
@@ -1587,7 +1963,9 @@ window.addEventListener("resize", () => {
   }
 
   applySidebarPreferences();
+  refreshDocumentHeadingOffsets();
   updateReaderScrollState();
+  updateActiveHeadingFromScroll();
 });
 
 window.addEventListener("blur", () => {
