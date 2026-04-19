@@ -93,7 +93,7 @@ function isLikelyBinaryBuffer(buffer) {
 }
 
 function escapeHtml(value = "") {
-  return value
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -276,6 +276,18 @@ function extractTokenText(tokens = []) {
   return tokens.map((token) => token?.raw ?? "").join("").trim();
 }
 
+function extractHtmlTokenText(value = "") {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value && typeof value === "object") {
+    return value.text ?? value.raw ?? "";
+  }
+
+  return String(value ?? "");
+}
+
 function resolveResource(rawTarget, currentFilePath, rootPath) {
   if (!rawTarget) {
     return null;
@@ -347,7 +359,7 @@ function buildMarkdownRenderer(currentFilePath, rootPath) {
   const renderer = new marked.Renderer();
   const headingSlugCounts = new Map();
 
-  renderer.html = (html) => escapeHtml(html);
+  renderer.html = (html) => escapeHtml(extractHtmlTokenText(html));
 
   renderer.heading = function heading({ tokens, depth }) {
     const html = this.parser.parseInline(tokens);
