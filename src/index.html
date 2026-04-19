@@ -16,6 +16,21 @@
 
         <div class="titlebar-actions">
           <button
+            id="toggleSearchButton"
+            class="button button-outline button-with-icon"
+            type="button"
+            aria-pressed="false"
+            aria-label="Search document"
+            title="Search document"
+            hidden
+          >
+            <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="5.75"></circle>
+              <path d="m15.2 15.2 4.05 4.05"></path>
+            </svg>
+            <span class="button-label">Search</span>
+          </button>
+          <button
             id="toggleOutlineButton"
             class="button button-outline button-with-icon"
             type="button"
@@ -152,6 +167,37 @@
           </section>
 
           <div id="statusBanner" class="status-banner" hidden></div>
+
+          <section id="documentSearchPanel" class="document-search-panel" hidden>
+            <label class="document-search-field" for="documentSearchInput">
+              <svg class="document-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="10.5" cy="10.5" r="5.75"></circle>
+                <path d="m15.2 15.2 4.05 4.05"></path>
+              </svg>
+              <input
+                id="documentSearchInput"
+                class="document-search-input"
+                type="search"
+                placeholder="Search this document"
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </label>
+
+            <p id="documentSearchCount" class="document-search-count">No matches</p>
+
+            <div class="document-search-actions">
+              <button id="documentSearchPrevButton" class="button button-outline document-search-button" type="button">
+                Previous
+              </button>
+              <button id="documentSearchNextButton" class="button button-outline document-search-button" type="button">
+                Next
+              </button>
+              <button id="documentSearchCloseButton" class="button button-outline document-search-button" type="button">
+                Close
+              </button>
+            </div>
+          </section>
 
           <section id="documentTools" class="document-tools" hidden>
             <div class="document-tools-copy">

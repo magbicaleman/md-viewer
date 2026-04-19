@@ -11,6 +11,9 @@ const LARGE_DOCUMENT_CHARACTER_THRESHOLD = 12000;
 const LARGE_DOCUMENT_HEADING_THRESHOLD = 8;
 const ACTIVE_HEADING_TOP_OFFSET_PX = 120;
 const SCROLL_TARGET_TOP_OFFSET_PX = 24;
+const SEARCH_SCROLL_TOP_OFFSET_PX = 120;
+const SEARCH_RESULTS_HIGHLIGHT_NAME = "md-search-results";
+const SEARCH_CURRENT_HIGHLIGHT_NAME = "md-search-current";
 const SIDEBAR_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
@@ -36,7 +39,11 @@ const state = {
   isLargeDocument: false,
   currentDocumentSizeBytes: null,
   scrollPositions: new Map(),
-  outlineVisible: false
+  outlineVisible: false,
+  searchOpen: false,
+  searchMatches: [],
+  activeSearchMatchIndex: -1,
+  searchIndex: null
 };
 
 function normalizeReaderWidth(value) {
@@ -71,6 +78,7 @@ function normalizeSidebarWidth(value) {
 const elements = {
   openFileButton: document.querySelector("#openFileButton"),
   openFolderButton: document.querySelector("#openFolderButton"),
+  toggleSearchButton: document.querySelector("#toggleSearchButton"),
   toggleOutlineButton: document.querySelector("#toggleOutlineButton"),
   toggleSidebarButton: document.querySelector("#toggleSidebarButton"),
   sidebarResizeHandle: document.querySelector("#sidebarResizeHandle"),
@@ -93,6 +101,12 @@ const elements = {
   linkPreviewHint: document.querySelector("#linkPreviewHint"),
   emptyState: document.querySelector("#emptyState"),
   statusBanner: document.querySelector("#statusBanner"),
+  documentSearchPanel: document.querySelector("#documentSearchPanel"),
+  documentSearchInput: document.querySelector("#documentSearchInput"),
+  documentSearchCount: document.querySelector("#documentSearchCount"),
+  documentSearchPrevButton: document.querySelector("#documentSearchPrevButton"),
+  documentSearchNextButton: document.querySelector("#documentSearchNextButton"),
+  documentSearchCloseButton: document.querySelector("#documentSearchCloseButton"),
   documentTools: document.querySelector("#documentTools"),
   documentToolsEyebrow: document.querySelector("#documentToolsEyebrow"),
   documentToolsSummary: document.querySelector("#documentToolsSummary"),
@@ -468,6 +482,10 @@ function showStatus(message, kind = "info") {
   elements.statusBanner.dataset.kind = kind;
 }
 
+function supportsDocumentSearch() {
+  return Boolean(window.CSS?.highlights && typeof window.Highlight === "function");
+}
+
 function escapeSelector(value = "") {
   if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
     return CSS.escape(value);
@@ -582,6 +600,7 @@ function resetDocumentState() {
   hideLinkPreview();
   state.currentPath = null;
   resetDocumentNavigation();
+  resetDocumentSearch();
   elements.titlebarDocumentName.textContent = "No document loaded";
   elements.markdownContent.innerHTML = "";
   elements.readerContent.scrollTop = 0;
@@ -662,6 +681,287 @@ function formatFileSize(sizeBytes) {
 
   const precision = value >= 100 ? 0 : value >= 10 ? 1 : 2;
   return `${value.toFixed(precision)} ${units[unitIndex]}`;
+}
+
+function clearSearchHighlights() {
+  if (!supportsDocumentSearch()) {
+    return;
+  }
+
+  CSS.highlights.delete(SEARCH_RESULTS_HIGHLIGHT_NAME);
+  CSS.highlights.delete(SEARCH_CURRENT_HIGHLIGHT_NAME);
+}
+
+function syncSearchUi() {
+  const hasDocument = Boolean(state.currentPath);
+  const shouldShowButton = hasDocument && supportsDocumentSearch();
+  const hasMatches = state.searchMatches.length > 0;
+
+  elements.toggleSearchButton.hidden = !shouldShowButton;
+  elements.toggleSearchButton.setAttribute("aria-pressed", String(state.searchOpen));
+  elements.toggleSearchButton.setAttribute(
+    "aria-label",
+    state.searchOpen ? "Hide document search" : "Search document"
+  );
+  elements.toggleSearchButton.setAttribute(
+    "title",
+    state.searchOpen ? "Hide document search" : "Search document"
+  );
+
+  elements.documentSearchPanel.hidden = !state.searchOpen || !shouldShowButton;
+  elements.documentSearchPrevButton.disabled = !hasMatches;
+  elements.documentSearchNextButton.disabled = !hasMatches;
+
+  if (!state.searchOpen) {
+    return;
+  }
+
+  if (state.searchMatches.length === 0) {
+    elements.documentSearchCount.textContent = elements.documentSearchInput.value.trim() ? "No matches" : "Type to search";
+    return;
+  }
+
+  elements.documentSearchCount.textContent = `${state.activeSearchMatchIndex + 1} of ${state.searchMatches.length}`;
+}
+
+function resetDocumentSearch({ preserveUi = false, preserveQuery = false } = {}) {
+  clearSearchHighlights();
+  state.searchMatches = [];
+  state.activeSearchMatchIndex = -1;
+  state.searchIndex = null;
+
+  if (!preserveUi) {
+    state.searchOpen = false;
+  }
+
+  if (!preserveQuery) {
+    elements.documentSearchInput.value = "";
+  }
+
+  syncSearchUi();
+}
+
+function buildDocumentSearchIndex() {
+  if (state.searchIndex?.path === state.currentPath) {
+    return state.searchIndex;
+  }
+
+  const walker = document.createTreeWalker(
+    elements.markdownContent,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode(node) {
+        if (!node?.nodeValue) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        if (node.parentElement?.closest(".heading-anchor")) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }
+  );
+  const segments = [];
+  let text = "";
+  let node = walker.nextNode();
+
+  while (node) {
+    const segmentStart = text.length;
+    text += node.nodeValue;
+    segments.push({
+      node,
+      start: segmentStart,
+      end: text.length
+    });
+    node = walker.nextNode();
+  }
+
+  state.searchIndex = {
+    path: state.currentPath,
+    text,
+    lowerText: text.toLocaleLowerCase(),
+    segments
+  };
+
+  return state.searchIndex;
+}
+
+function locateSearchBoundary(segments, position) {
+  if (segments.length === 0) {
+    return null;
+  }
+
+  for (const segment of segments) {
+    if (position <= segment.end) {
+      return {
+        node: segment.node,
+        offset: Math.max(0, Math.min(position - segment.start, segment.node.nodeValue.length))
+      };
+    }
+  }
+
+  const lastSegment = segments.at(-1);
+  return {
+    node: lastSegment.node,
+    offset: lastSegment.node.nodeValue.length
+  };
+}
+
+function createSearchRange(segments, start, end) {
+  const startBoundary = locateSearchBoundary(segments, start);
+  const endBoundary = locateSearchBoundary(segments, end);
+
+  if (!startBoundary || !endBoundary) {
+    return null;
+  }
+
+  const range = new Range();
+  range.setStart(startBoundary.node, startBoundary.offset);
+  range.setEnd(endBoundary.node, endBoundary.offset);
+  return range;
+}
+
+function applySearchHighlights() {
+  clearSearchHighlights();
+
+  if (!supportsDocumentSearch() || state.searchMatches.length === 0) {
+    return;
+  }
+
+  const allMatchesHighlight = new Highlight();
+
+  for (const match of state.searchMatches) {
+    allMatchesHighlight.add(match.range);
+  }
+
+  CSS.highlights.set(SEARCH_RESULTS_HIGHLIGHT_NAME, allMatchesHighlight);
+
+  const activeMatch = state.searchMatches[state.activeSearchMatchIndex];
+
+  if (!activeMatch) {
+    return;
+  }
+
+  const currentMatchHighlight = new Highlight();
+  currentMatchHighlight.add(activeMatch.range);
+  CSS.highlights.set(SEARCH_CURRENT_HIGHLIGHT_NAME, currentMatchHighlight);
+}
+
+function scrollSearchMatchIntoView(matchIndex, { behavior = "smooth" } = {}) {
+  const match = state.searchMatches[matchIndex];
+
+  if (!match) {
+    return;
+  }
+
+  const rect = match.range.getBoundingClientRect();
+
+  if (rect.width === 0 && rect.height === 0) {
+    return;
+  }
+
+  const viewportRect = elements.readerContent.getBoundingClientRect();
+  const nextScrollTop = rect.top - viewportRect.top + elements.readerContent.scrollTop - SEARCH_SCROLL_TOP_OFFSET_PX;
+
+  elements.readerContent.scrollTo({
+    top: Math.max(0, nextScrollTop),
+    behavior
+  });
+}
+
+function updateSearchResults({ scrollToCurrent = false, behavior = "smooth" } = {}) {
+  const query = elements.documentSearchInput.value.trim();
+
+  state.searchMatches = [];
+  state.activeSearchMatchIndex = -1;
+  clearSearchHighlights();
+
+  if (!query || !state.currentPath || !supportsDocumentSearch()) {
+    syncSearchUi();
+    return;
+  }
+
+  const searchIndex = buildDocumentSearchIndex();
+  const normalizedQuery = query.toLocaleLowerCase();
+  let nextMatchStart = searchIndex.lowerText.indexOf(normalizedQuery);
+
+  while (nextMatchStart >= 0) {
+    const matchEnd = nextMatchStart + normalizedQuery.length;
+    const range = createSearchRange(searchIndex.segments, nextMatchStart, matchEnd);
+
+    if (range) {
+      state.searchMatches.push({
+        range,
+        start: nextMatchStart,
+        end: matchEnd
+      });
+    }
+
+    nextMatchStart = searchIndex.lowerText.indexOf(normalizedQuery, nextMatchStart + Math.max(1, normalizedQuery.length));
+  }
+
+  if (state.searchMatches.length > 0) {
+    state.activeSearchMatchIndex = 0;
+  }
+
+  applySearchHighlights();
+  syncSearchUi();
+
+  if (scrollToCurrent && state.activeSearchMatchIndex >= 0) {
+    scrollSearchMatchIntoView(state.activeSearchMatchIndex, { behavior });
+  }
+}
+
+function setActiveSearchMatch(nextIndex, { behavior = "smooth" } = {}) {
+  if (state.searchMatches.length === 0) {
+    state.activeSearchMatchIndex = -1;
+    applySearchHighlights();
+    syncSearchUi();
+    return;
+  }
+
+  const normalizedIndex = ((nextIndex % state.searchMatches.length) + state.searchMatches.length) % state.searchMatches.length;
+  state.activeSearchMatchIndex = normalizedIndex;
+  applySearchHighlights();
+  syncSearchUi();
+  scrollSearchMatchIntoView(normalizedIndex, { behavior });
+}
+
+function stepSearchMatch(direction) {
+  if (state.searchMatches.length === 0) {
+    return;
+  }
+
+  const baseIndex = state.activeSearchMatchIndex >= 0 ? state.activeSearchMatchIndex : 0;
+  setActiveSearchMatch(baseIndex + direction);
+}
+
+function openDocumentSearch({ focusInput = true, selectInput = true } = {}) {
+  if (!state.currentPath || !supportsDocumentSearch()) {
+    return;
+  }
+
+  state.searchOpen = true;
+  syncSearchUi();
+
+  if (!focusInput) {
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    elements.documentSearchInput.focus();
+
+    if (selectInput) {
+      elements.documentSearchInput.select();
+    }
+  });
+}
+
+function closeDocumentSearch() {
+  resetDocumentSearch();
+  showStatus("");
 }
 
 function resetDocumentNavigation() {
@@ -1271,6 +1571,10 @@ async function openMarkdownFile(filePath, options = {}) {
     const normalizedHash = normalizeHash(options.hash);
 
     rememberCurrentScrollPosition();
+    clearSearchHighlights();
+    state.searchMatches = [];
+    state.activeSearchMatchIndex = -1;
+    state.searchIndex = null;
 
     const file = await bridge.readMarkdownFile(filePath);
     const sameDocument = Boolean(state.currentPath) && state.currentPath === file.absolutePath;
@@ -1321,6 +1625,11 @@ async function openMarkdownFile(filePath, options = {}) {
       updateReaderScrollState();
       updateActiveHeadingFromScroll();
       rememberCurrentScrollPosition();
+      syncSearchUi();
+
+      if (state.searchOpen && elements.documentSearchInput.value.trim()) {
+        updateSearchResults({ scrollToCurrent: false, behavior: "auto" });
+      }
     });
   } catch (error) {
     resetDocumentState();
@@ -1611,6 +1920,29 @@ function handleMarkdownClick(event) {
   }
 }
 
+function handleDocumentKeydown(event) {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+    if (!state.currentPath) {
+      return;
+    }
+
+    event.preventDefault();
+    openDocumentSearch();
+    return;
+  }
+
+  if (event.key === "F3" && state.currentPath && state.searchOpen) {
+    event.preventDefault();
+    stepSearchMatch(event.shiftKey ? -1 : 1);
+    return;
+  }
+
+  if (event.key === "Escape" && state.searchOpen && document.activeElement === elements.documentSearchInput) {
+    event.preventDefault();
+    closeDocumentSearch();
+  }
+}
+
 function bindEvents() {
   renderThemeOptions();
   syncThemeSelectShell();
@@ -1641,6 +1973,15 @@ function bindEvents() {
     } catch (error) {
       reportError(error, "Unable to open the folder picker.");
     }
+  });
+
+  elements.toggleSearchButton.addEventListener("click", () => {
+    if (state.searchOpen) {
+      closeDocumentSearch();
+      return;
+    }
+
+    openDocumentSearch();
   });
 
   elements.toggleSidebarButton.addEventListener("click", () => {
@@ -1674,6 +2015,41 @@ function bindEvents() {
   elements.filterInput.addEventListener("input", (event) => {
     state.filterText = event.target.value;
     renderFileList();
+  });
+
+  elements.documentSearchInput.addEventListener("input", () => {
+    updateSearchResults({ scrollToCurrent: false, behavior: "auto" });
+  });
+
+  elements.documentSearchInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+
+      if (state.searchMatches.length === 0) {
+        updateSearchResults({ scrollToCurrent: true });
+        return;
+      }
+
+      stepSearchMatch(event.shiftKey ? -1 : 1);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDocumentSearch();
+    }
+  });
+
+  elements.documentSearchPrevButton.addEventListener("click", () => {
+    stepSearchMatch(-1);
+  });
+
+  elements.documentSearchNextButton.addEventListener("click", () => {
+    stepSearchMatch(1);
+  });
+
+  elements.documentSearchCloseButton.addEventListener("click", () => {
+    closeDocumentSearch();
   });
 
   elements.readerContent.addEventListener("scroll", () => {
@@ -1768,6 +2144,7 @@ function bindEvents() {
 
     closeThemeMenu();
   });
+  document.addEventListener("keydown", handleDocumentKeydown);
 
   elements.fontSizeInput.addEventListener("input", (event) => {
     state.preferences.fontSize = Number(event.target.value);
@@ -1925,6 +2302,7 @@ async function initialize() {
     renderFileList();
     bindEvents();
     syncSettingsButton();
+    syncSearchUi();
     updateReaderScrollState();
     requestAnimationFrame(() => {
       syncAllRangeControls();
